@@ -121,9 +121,39 @@ specific authorization for that submission.
   Until then, keep probes at the existing catalog and interop boundaries rather than creating an
   abstraction for one call site.
 
+### What the first six PRs taught
+
+Practices that were not obvious from the plan and are worth repeating:
+
+- **Write the test first and watch it fail, before touching the source.** A run of the existing
+  suite on an unmodified tree proves nothing, because nothing in it asserts the defect. Twice
+  the first red run failed for the wrong reason (a pydantic deprecation surfacing through
+  `filterwarnings = ["error"]`, and a warning cache already primed by an earlier test), which
+  only showed up because the red run was real.
+- **Every branch cuts from `upstream/main`, so test files collide.** Two of six integration
+  merges conflicted where separate branches added a test at the same point in
+  `tests/test_colormap.py`. Production hunks have never conflicted. Resolve by keeping both;
+  the upstream PRs are unaffected.
+- **Check the tracker for the specific defect, not the subsystem.** Searching "napari" once at
+  the start does not cover a stops-aliasing bug found three PRs later.
+- **Run the project's pinned tools.** `uv run --group dev ruff`, not `uvx ruff`, which resolves
+  an unrelated version. Take a mypy baseline before editing, since `src/cmap/_colormap.py`
+  already reports four missing-stub errors and a fifth is easy to miss.
+- **A stacked PR is sometimes the honest option.** #149 documents behavior that only becomes
+  true once #148 lands, so it is branched from #148 and says so. Do not describe future
+  behavior as current in rendered API docs.
+- **Outward-facing prose follows `agents-conventions/core/AGENTS_upstream.md`**, including the
+  punctuation rule: em dashes are the loudest tell of model-drafted text, so prefer periods,
+  commas, and semicolons.
+
 ## Next Steps
 
-1. Start with the independent napari `high_color` converter defect.
-2. Merge each completed feature branch into `integration` with `--no-ff`.
-3. Add stock/patched MCS tests when the first capability changes downstream behavior.
+1. The upstream queue is paused after the sixth PR. See `upstream_roadmap.md` for what resumes
+   it.
+2. Keep merging into `integration` with `--no-ff` if a PR is revised during review; the merge
+   list is the manifest.
+3. Add stock/patched MCS tests when the first capability changes downstream behavior. None of
+   the six PRs does: they are defect fixes with no API surface, and MCSLAB uses its own
+   converter rather than `cmap.Colormap.to_napari()`.
 4. Retain and pin the first integration commit consumed outside the local checkout.
+5. Remove a feature worktree once its PR is merged or closed; each carries its own `.venv`.
