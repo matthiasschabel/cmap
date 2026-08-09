@@ -6,6 +6,10 @@ repo_name: pyapp-kit/cmap
 repo_url: https://github.com/pyapp-kit/cmap
 edit_uri: edit/main/docs/
 
+# Fork-only maintainer notes live beside the code but are not user documentation.
+exclude_docs: |
+  dev/
+
 watch:
   - src
 
