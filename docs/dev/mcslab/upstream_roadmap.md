@@ -101,20 +101,19 @@ carries that question and has not been reviewed.
    pickle/Pydantic/psygnal, with the default `as_dict()` shape unchanged. The largest of the
    three and the one most likely to be rejected on scope.
 
-### Deferred to the MCSLAB quarantine
+### Features
 
-These are features, not defects, and none of them should be proposed upstream while the six
-bug fixes are unreviewed. Build them behind the MCS compatibility layer, where they do not
-depend on review timing, and revisit upstreaming once the fix queue has a verdict.
+The hold on proposing these upstream is lifted: five defect fixes merged without requested
+changes, which answers the question the hold existed for. Items 11 and 12 stay in the MCSLAB
+quarantine for now.
 
-9. **Shared and signed infinity colors.** `inf`, `neg_inf`, `pos_inf` with the fallback
-   `sign-specific -> inf -> legacy under/over -> ramp endpoint`. The direct MCS migration
-   capability, and the subject of the open discussion in #144. Note that #149, if merged,
-   documents the current signed-infinity routing, which is the contract this feature extends
-   rather than contradicts.
-10. **Optionally split masked data from unmasked NaN.** `nan` and `masked` together, each
-    resolving through `bad`. Lower priority than it looked: #148 makes the existing single
-    `bad` behave correctly for mixed input, which was the practical complaint.
+9 and 10 were merged into one change and **implemented** on 2026-08-10, on
+`feat/exceptional-colors`, stacked on #150. `neg_inf`, `pos_inf`, `nan`, and `masked`, each
+falling back to the color its class uses today. No shared `inf` parent: the owner decided
+against it, since `pos_inf=c, neg_inf=c` already expresses the union. Design, dispositions,
+and the two Codex review passes are in `exceptional_colors_plan.md`; the PR body is in
+`exceptional_colors_pr_body.md`. Not pushed and no PR opened, both of which need the owner
+to say so.
 11. **Exact palette-variant selection.** `available_sizes` plus `variant(size)`, without
     changing the sampling meaning of `lut(N)`.
 12. **Annotate verified ColorBrewer and Tol families.** Data-only follow-up to 11.
@@ -164,6 +163,18 @@ keeps application policy downstream.
   independently designed palette are different operations.
 
 ## Deferred Work
+
+- Two defects found while planning the exceptional-color work, each worth its own filing and
+  neither fixed by it. Non-native byte order is reinterpreted rather than byteswapped
+  (`_colormap.py`, the `.view(newbyteorder)` line), so **every** exceptional value in such an
+  array is lost, including `under`/`over`/`bad` today; matplotlib byteswaps. And
+  `cmap(scalar, bytes=True)` raises `ValueError`, because `Color` rejects a uint8 array;
+  that one is an API question, so an issue rather than a PR.
+- `with_extremes()` and `shifted()` pass every keyword to `type(self)` unconditionally, so a
+  subclass overriding `__init__` with a narrower signature breaks. Verified: released cmap
+  already does this in `shifted()`, and #150 extends it to `with_extremes()`. The
+  exceptional-color PR follows the surrounding pattern rather than diverging from it. If the
+  maintainer wants narrow subclasses supported, it belongs on #150.
 
 - Final public spelling of signed fields remains a maintainer decision. `neg_inf`/`pos_inf` is
   preferred over `minf`/`pinf` because it is unambiguous.
