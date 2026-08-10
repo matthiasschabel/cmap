@@ -73,6 +73,15 @@ def test_napari(qapp: "QApplication") -> None:
     v.close()
 
 
+def test_napari_no_deprecated_field_access() -> None:
+    pytest.importorskip("napari")
+    from cmap._external import _napari_colormap_param_names
+
+    # the names are cached, so an earlier conversion may already have paid the warning
+    _napari_colormap_param_names.cache_clear()
+    assert CMAP.to_napari() is not None
+
+
 @pytest.mark.filterwarnings("ignore")
 def test_napari_extreme_colors() -> None:
     # nan_color/low_color/high_color were added in napari 0.6.1
@@ -84,15 +93,6 @@ def test_napari_extreme_colors() -> None:
     np.testing.assert_allclose(ncm.low_color, Color(UNDER).rgba)
     np.testing.assert_allclose(ncm.high_color, Color(OVER).rgba)
     np.testing.assert_allclose(ncm.nan_color, Color(bad).rgba)
-
-
-def test_napari_no_deprecated_field_access() -> None:
-    pytest.importorskip("napari")
-    from cmap._external import _napari_colormap_param_names
-
-    # the names are cached, so an earlier conversion may already have paid the warning
-    _napari_colormap_param_names.cache_clear()
-    assert CMAP.to_napari() is not None
 
 
 @pytest.mark.skipif(
