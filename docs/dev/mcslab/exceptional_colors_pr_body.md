@@ -33,4 +33,5 @@ Two things the diff does not show:
 the one converter target that represents the class. matplotlib's `bad` covers NaN and masked
 together, so `bad` is still what goes there.
 
-Depends on #150, which this branches from.
+Depends on #150, which this branches from. Only the last commit is mine; the first two are
+#150's.
