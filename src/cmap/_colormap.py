@@ -475,8 +475,7 @@ class Colormap:
         xa = np.array(x, copy=True)
         if not xa.dtype.isnative:
             # Native byteorder is faster.
-            native: Literal[">", "<"] = ">" if xa.dtype.byteorder in ("<", "=") else "<"
-            xa = xa.view(xa.dtype.newbyteorder(native))
+            xa = xa.byteswap().view(xa.dtype.newbyteorder())
         is_float = xa.dtype.kind == "f"
         if self._has_exceptional and is_float:
             # before the scaling below: it overflows large finite values to infinity

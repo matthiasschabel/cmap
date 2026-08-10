@@ -19,6 +19,7 @@ queue was paused on: small, single-defect PRs against this project land.
 | #149 | exceptional-value documentation | merged; was stacked on #148 |
 | #150 | interpolation rewritten on borrowed stops, and dropped by `with_extremes()` | **open**, draft |
 | #151 | per-class colors for `neg_inf`, `pos_inf`, `nan`, `masked` (#144) | **open**, draft; stacked on #150 |
+| #152 | non-native byte order reinterpreted instead of byteswapped | **open**, draft |
 
 Upstream also shipped its own `crameri` v8 correction (#143) on top of our orientation fix
 (#141).
@@ -167,12 +168,15 @@ keeps application policy downstream.
 
 ## Deferred Work
 
-- Two defects found while planning the exceptional-color work, each worth its own filing and
-  neither fixed by it. Non-native byte order is reinterpreted rather than byteswapped
-  (`_colormap.py`, the `.view(newbyteorder)` line), so **every** exceptional value in such an
-  array is lost, including `under`/`over`/`bad` today; matplotlib byteswaps. And
-  `cmap(scalar, bytes=True)` raises `ValueError`, because `Color` rejects a uint8 array;
-  that one is an API question, so an issue rather than a PR.
+- The byte-order defect became #152 on 2026-08-10. `git log -L` pinned it to the numpy 2
+  migration in #60 (`de1fbe2`), which dropped the `.byteswap()` when `ndarray.newbyteorder()`
+  was removed. Codex accepted it with no blocking findings. Merging it into `integration`
+  conflicted with #151 exactly where predicted, two lines apart in `__call__`; keep the
+  byteswap line and #151's mask block. With both merged, exceptional colors now resolve
+  correctly for non-native input, which is the outcome the #151 plan deferred to this fix.
+- `cmap(scalar, bytes=True)` raises `ValueError`, because `Color` rejects a uint8 array. An
+  API question rather than a defect with one right answer, so it goes to the tracker as an
+  issue.
 - `with_extremes()` and `shifted()` pass every keyword to `type(self)` unconditionally, so a
   subclass overriding `__init__` with a narrower signature breaks. Verified: released cmap
   already does this in `shifted()`, and #150 extends it to `with_extremes()`. The
