@@ -1,7 +1,7 @@
 # MCSLAB cmap integration workflow
 
 **Status:** Active
-**Last updated:** 2026-08-09
+**Last updated:** 2026-08-10
 **Scope:** the `matthiasschabel/cmap` fork and its use by `python-mcslab`
 
 ## Context
@@ -145,11 +145,17 @@ Practices that were not obvious from the plan and are worth repeating:
 - **Outward-facing prose follows `agents-conventions/core/AGENTS_upstream.md`**, including the
   punctuation rule: em dashes are the loudest tell of model-drafted text, so prefer periods,
   commas, and semicolons.
+- **A merge upstream stales everything else immediately.** When five PRs landed at once,
+  `integration` fell three upstream commits behind and the one remaining PR started reporting a
+  conflict, both from the same cause: every branch was cut from the same older base. Merge
+  `upstream/main` into `integration` and rebase the open branch in the same pass. See
+  `AGENTS_upstream.md` "After it merges" and `AGENTS_version_control.md` "Deleting a branch
+  after it merges" for the verification procedure; squash merges mean ancestry checks report a
+  landed branch as unmerged.
 
 ## Next Steps
 
-1. The upstream queue is paused after the sixth PR. See `upstream_roadmap.md` for what resumes
-   it.
+1. Five of the six PRs merged on 2026-08-10; only #150 is open. See `upstream_roadmap.md`.
 2. Keep merging into `integration` with `--no-ff` if a PR is revised during review; the merge
    list is the manifest.
 3. Add stock/patched MCS tests when the first capability changes downstream behavior. None of

@@ -1,28 +1,35 @@
 # MCSLAB cmap upstream roadmap
 
 **Status:** Active
-**Last updated:** 2026-08-09
+**Last updated:** 2026-08-10
 **Scope:** small upstream cmap contributions that allow MCSLAB to reduce its colormap layer
 
 ## Where this stands
 
-Six pull requests are open against `pyapp-kit/cmap`, none reviewed yet. The queue is
-**paused** after the last unambiguous defect; everything remaining needs either a maintainer
-decision or a design argument, and stacking more unreviewed work raises the cost of rework if
-an early PR is rejected.
+**Five of the six pull requests merged upstream on 2026-08-10.** Only #150 is still open. The
+maintainer took every defect fix without requesting changes, which answers the question the
+queue was paused on: small, single-defect PRs against this project land.
 
-| PR | Subject | Notes |
+| PR | Subject | State |
 |---|---|---|
-| #145 | napari `high_color` assigned to `nan_color` | queue item 1 |
-| #146 | pydantic `__fields__` probed before `model_fields` | not in the original queue; found while testing #145 |
-| #147 | `ColorStops.reversed()` corrupts its source | queue item 2 |
-| #148 | unmasked NaNs lost in a masked array | queue item 3 |
-| #149 | exceptional-value documentation | queue item 4; **stacked on #148**, which must merge first |
-| #150 | interpolation rewritten on borrowed stops, and dropped by `with_extremes()` | queue item 5, plus the interpolation half of item 6 |
+| #145 | napari `high_color` assigned to `nan_color` | merged |
+| #146 | pydantic `__fields__` probed before `model_fields` | merged; found while testing #145 |
+| #147 | `ColorStops.reversed()` corrupts its source | merged |
+| #148 | unmasked NaNs lost in a masked array | merged |
+| #149 | exceptional-value documentation | merged; was stacked on #148 |
+| #150 | interpolation rewritten on borrowed stops, and dropped by `with_extremes()` | **open**, draft |
 
-`integration` carries all six as `--no-ff` merges. Two of those merges hit trivial conflicts
-where separate branches added tests at the same point in `tests/test_colormap.py`; production
-hunks have never conflicted.
+Upstream also shipped its own `crameri` v8 correction (#143) on top of our orientation fix
+(#141).
+
+`integration` has been merged up to `upstream/main` and now carries only the #150 work plus
+this `docs/dev/mcslab/` tree and the `mkdocs.yml` exclusion. The five merged branches and
+their worktrees are deleted; the `interp-aliasing` worktree remains while #150 is open.
+
+#150 was rebased onto the post-merge `upstream/main` on 2026-08-10, because #147's regression
+test landed at the same point in `tests/test_colormap.py` and left the PR conflicting. The
+rebased branch has not been force-pushed to the fork, so the PR on GitHub still shows the old,
+conflicting version.
 
 ## Context
 
@@ -67,12 +74,13 @@ plan mid-flight.
 
 ## Current Decision
 
-### Shipped upstream, awaiting review
+### Shipped upstream
 
-Queue items 1 to 5, plus one defect found along the way, are the six PRs in the table above.
-Nothing further should be submitted until at least one of them draws a response: the maintainer's
-reaction to #148 in particular (a deliberate divergence from matplotlib) and to #150 (which
-touches copy semantics) tells us how the remaining, more speculative items will land.
+Queue items 1 to 5, plus one defect found along the way, are the six PRs in the table above;
+five are merged. #148 merging is the informative one: it was a deliberate divergence from
+matplotlib's identical masked/NaN handling, justified from cmap's own `docs/faq.md`, and it
+was accepted as-is. The maintainer's posture on copy semantics is still unknown, because #150
+carries that question and has not been reviewed.
 
 ### Blocked on a maintainer decision
 
@@ -167,17 +175,21 @@ keeps application policy downstream.
   fixed (#147, #150); nothing has decided whether the constructor should copy in general. Doing
   so would change the memory profile of every catalog construction, so it needs a measurement,
   not an opinion.
-- The six feature worktrees under `~/GitHub/cmap-feat/` are retained while the PRs are open. Each
-  holds its own `.venv`, so they are not free; remove them once the corresponding PR is merged or
-  closed.
+- Only the `interp-aliasing` worktree under `~/GitHub/cmap-feat/` remains, held while #150 is
+  open. The other five were removed on 2026-08-10, reclaiming about 3.7 GB of per-worktree
+  `.venv`.
+- The merged branches still exist on the `matthiasschabel/cmap` fork. Deleting them is a remote
+  mutation and needs the repository owner to say so.
 
 ## Next Steps
 
-1. **Wait.** No new upstream submissions until at least one of the six PRs draws a maintainer
-   response.
-2. If #148 is accepted, #149 can be rebased onto `main` and unstacked.
+1. **Force-push the rebased #150** so the PR stops showing a conflict, then leave it in draft
+   until the owner marks it ready. The rebase is done locally; the push is not authorized yet.
+2. The queue is no longer blocked on "does anything land". Five merges answer that. Items 7 and
+   8 can be planned once #150 draws a review, since it is the one carrying copy semantics.
 3. Ask the item 6 API question as an issue, not a PR: what should an omitted `bad`/`under`/`over`
    mean in `with_extremes`, and should a modified copy keep the original `identifier`?
 4. Meanwhile, build the signed-infinity work (item 9) behind the MCS compatibility layer, where
    it does not wait on review.
-5. Re-plan items 7 and 8 only after the maintainer's posture on copy semantics is known.
+5. Raise the MCS cmap floor and delete the corresponding fallbacks once the five merged fixes
+   ship in a release. They are in `main` but unreleased; the current floor is `cmap>=0.7`.
