@@ -18,6 +18,7 @@ queue was paused on: small, single-defect PRs against this project land.
 | #148 | unmasked NaNs lost in a masked array | merged |
 | #149 | exceptional-value documentation | merged; was stacked on #148 |
 | #150 | interpolation rewritten on borrowed stops, and dropped by `with_extremes()` | **open**, draft |
+| #151 | per-class colors for `neg_inf`, `pos_inf`, `nan`, `masked` (#144) | **open**, draft; stacked on #150 |
 
 Upstream also shipped its own `crameri` v8 correction (#143) on top of our orientation fix
 (#141).
@@ -112,8 +113,10 @@ quarantine for now.
 falling back to the color its class uses today. No shared `inf` parent: the owner decided
 against it, since `pos_inf=c, neg_inf=c` already expresses the union. Design, dispositions,
 and the two Codex review passes are in `exceptional_colors_plan.md`; the PR body is in
-`exceptional_colors_pr_body.md`. Not pushed and no PR opened, both of which need the owner
-to say so.
+`exceptional_colors_pr_body.md`. Pushed to the fork and opened as draft #151 on 2026-08-10
+with the owner's authorization. Because a cross-fork PR cannot target a fork branch, #151 is
+based on `main` and shows #150's two commits alongside ours; its diff shrinks to ours alone
+once #150 merges.
 11. **Exact palette-variant selection.** `available_sizes` plus `variant(size)`, without
     changing the sampling meaning of `lut(N)`.
 12. **Annotate verified ColorBrewer and Tol families.** Data-only follow-up to 11.
