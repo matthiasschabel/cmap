@@ -174,9 +174,13 @@ keeps application policy downstream.
   conflicted with #151 exactly where predicted, two lines apart in `__call__`; keep the
   byteswap line and #151's mask block. With both merged, exceptional colors now resolve
   correctly for non-native input, which is the outcome the #151 plan deferred to this fix.
-- `cmap(scalar, bytes=True)` raises `ValueError`, because `Color` rejects a uint8 array. An
-  API question rather than a defect with one right answer, so it goes to the tracker as an
-  issue.
+- `cmap(scalar, bytes=True)` raises `ValueError`, because `parse_rgba` accepts a 3-element
+  integer array but not a 4-element one. Filed as issue #153 on 2026-08-10, not a PR: the
+  scalar overload promises a `Color` whatever `bytes` says, while the `bytes` documentation
+  promises `uint8`, and only the maintainer can say which contract wins. The two live
+  resolutions are a `(4,)` `uint8` return with the overloads split on `bytes`, or
+  quantize-then-`Color`, which keeps the scalar contract and shows `bytes=True` only in the
+  rounding. Draft body kept as `bytes_scalar_issue.md`. We offered to send the PR either way.
 - `with_extremes()` and `shifted()` pass every keyword to `type(self)` unconditionally, so a
   subclass overriding `__init__` with a narrower signature breaks. Verified: released cmap
   already does this in `shifted()`, and #150 extends it to `with_extremes()`. The
