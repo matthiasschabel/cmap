@@ -28,8 +28,8 @@ their worktrees are deleted; the `interp-aliasing` worktree remains while #150 i
 
 #150 was rebased onto the post-merge `upstream/main` on 2026-08-10, because #147's regression
 test landed at the same point in `tests/test_colormap.py` and left the PR conflicting. The
-rebased branch has not been force-pushed to the fork, so the PR on GitHub still shows the old,
-conflicting version.
+rebased branch was force-pushed to the fork the same day with the owner's authorization, and
+GitHub now reports the PR mergeable. It remains a draft.
 
 ## Context
 
@@ -183,8 +183,8 @@ keeps application policy downstream.
 
 ## Next Steps
 
-1. **Force-push the rebased #150** so the PR stops showing a conflict, then leave it in draft
-   until the owner marks it ready. The rebase is done locally; the push is not authorized yet.
+1. **Mark #150 ready for review** when the owner chooses to. The rebase and force-push are
+   done and the PR is mergeable; it is still a draft, so no maintainer sees it yet.
 2. The queue is no longer blocked on "does anything land". Five merges answer that. Items 7 and
    8 can be planned once #150 draws a review, since it is the one carrying copy semantics.
 3. Ask the item 6 API question as an issue, not a PR: what should an omitted `bad`/`under`/`over`
