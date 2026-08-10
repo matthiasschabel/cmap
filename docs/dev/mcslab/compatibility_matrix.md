@@ -1,7 +1,7 @@
 # MCSLAB cmap compatibility matrix
 
 **Status:** Active
-**Last updated:** 2026-08-09
+**Last updated:** 2026-08-10
 **Scope:** behavior expected from released cmap and the `matthiasschabel/cmap` integration branch
 
 ## Context
@@ -12,21 +12,26 @@ retirement condition for each migration seam.
 
 ## Current Decision
 
-`integration` now carries six merged fix branches on top of upstream
-`8040ef777c9c7aee7959e6029ffcd1a97582f41e`. **None of them is a fork capability**: all six are
-defect fixes or documentation with no new API surface, so there is still nothing for MCSLAB to
-probe for and no fallback to write. The first genuine capability will be the signed-infinity
-work (roadmap item 9).
+Five of the six fixes merged upstream on 2026-08-10, so `integration` is now `upstream/main`
+plus the still-open #150 work. **None of the six is a fork capability**: all are defect fixes
+or documentation with no new API surface, so there is still nothing for MCSLAB to probe for and
+no fallback to write. The first genuine capability will be the signed-infinity work (roadmap
+item 9).
+
+The merges do not move the MCS floor. Users install releases, and the five fixes are in
+upstream `main` but unreleased; `cmap>=0.7` stays the requirement and every fallback stays in
+place until a release contains them.
 
 Two rows below are partly overtaken by those fixes:
 
 - *Distinct NaN and mask colors* is less pressing than it looked. cmap PR #148 makes the single
   existing `bad` color apply to unmasked NaNs inside a masked array, which was the practical
   failure. A separate `nan`/`masked` split remains optional.
-- *Complete state propagation* is partly delivered. #147 stops `ColorStops.reversed()`
-  corrupting its source, and #150 stops construction rewriting borrowed interpolation and makes
-  `with_extremes()` carry it. What remains is `identifier` and the omitted-versus-explicit-`None`
-  question, both of which need a maintainer decision before MCS can rely on anything.
+- *Complete state propagation* is partly delivered. #147 (merged) stops `ColorStops.reversed()`
+  corrupting its source; #150 (open) stops construction rewriting borrowed interpolation and
+  makes `with_extremes()` carry it. What remains is `identifier` and the
+  omitted-versus-explicit-`None` question, both of which need a maintainer decision before MCS
+  can rely on anything.
 
 | Capability | Released cmap 0.7.2 | Patched integration target | MCS fallback while absent | Retirement condition |
 |---|---|---|---|---|
@@ -55,9 +60,10 @@ Tests should state capability behavior rather than assume a particular version:
 ## Deferred Work
 
 - Record the retained integration commit and exact test counts after the first feature merge.
-  As of the six fix merges, the patched suite is 242 passed, 2 skipped, 1 xfailed under
-  `THIRD=1 uv run --no-dev --group test_thirdparty pytest`. There is still no capability to pin
-  a commit *for*, so pinning waits.
+  The 242 passed / 2 skipped / 1 xfailed figure recorded on 2026-08-09 under
+  `THIRD=1 uv run --no-dev --group test_thirdparty pytest` is stale: upstream has since added
+  the crameri and cmocean data-parity tests, so re-measure before quoting it. There is still no
+  capability to pin a commit *for*, so pinning waits.
 - Add the concrete probe location once the public spelling of signed infinity fields is accepted.
 - Decide whether separate NaN and mask colors belong in MCS; they are not required by its current
   API.
