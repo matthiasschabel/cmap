@@ -1,7 +1,7 @@
 # MCSLAB cmap upstream roadmap
 
 **Status:** Active
-**Last updated:** 2026-08-10
+**Last updated:** 2026-08-12
 **Scope:** small upstream cmap contributions that allow MCSLAB to reduce its colormap layer
 
 ## Where this stands
@@ -18,7 +18,7 @@ queue was paused on: small, single-defect PRs against this project land.
 | #148 | unmasked NaNs lost in a masked array | merged |
 | #149 | exceptional-value documentation | merged; was stacked on #148 |
 | #150 | interpolation rewritten on borrowed stops, and dropped by `with_extremes()` | **open**, draft |
-| #151 | per-class colors for `neg_inf`, `pos_inf`, `nan`, `masked` (#144) | **open**, draft; stacked on #150 |
+| #151 | per-class colors for `neg_inf`, `pos_inf`, `nan`, `masked` (#144) | **open**, draft; stacked on #150; maintainer receptive 2026-08-12, reply drafted |
 | #152 | non-native byte order reinterpreted instead of byteswapped | **open**, draft |
 
 Upstream also shipped its own `crameri` v8 correction (#143) on top of our orientation fix
@@ -84,24 +84,42 @@ matplotlib's identical masked/NaN handling, justified from cmap's own `docs/faq.
 was accepted as-is. The maintainer's posture on copy semantics is still unknown, because #150
 carries that question and has not been reviewed.
 
-### Blocked on a maintainer decision
+### Unblocked by the maintainer's #151 comment (2026-08-12)
 
-6. **Preserve the rest of the public state in copy/update paths.** #150 took the interpolation
-   half, because `with_extremes` already forwards `name` and `category` and the omission was
-   plainly accidental. What remains is genuinely undecided:
-   - `with_extremes` drops `identifier`. Should a modified copy keep the original identifier,
-     derive a new one, or have none?
-   - An omitted `bad`/`under`/`over` currently **clears** any existing value. Preserving it is
-     what a user expects, but then `with_extremes(under=None)` can no longer remove a color
-     without a sentinel. That is an API design question, not a bug fix, and it should be asked
-     as an issue before any code.
+The maintainer's comment on #151 (5266155726) asked, unprompted, whether the extreme colors
+survive `reversed`, `with_extremes`, pickle, and `as_dict`/pydantic, and said "now is as good
+a time as any" to address what was already broken. That is the opening items 6 to 8 were
+waiting for. Verified on `main` 2026-08-12: none of the four channels preserve even the old
+`under`/`over`/`bad` (`reversed` also drops interpolation; pickle also drops name and
+category; a catalog colormap with extremes pydantic-serializes to its bare qualified name).
+matplotlib 3.11.1 preserves in all four, and swaps under/over on `reversed()`.
+
+Owner-settled policy, 2026-08-12 (reply draft in `exceptional_colors_maintainer_reply.md`,
+not yet posted):
+
+- `reversed()` swaps the directional pairs (`under`/`over`, `neg_inf`/`pos_inf`), preserves
+  `bad`/`nan`/`masked` and interpolation. Cite matplotlib.
+- `with_extremes()` preserves anything not passed, citing matplotlib; clearing one color
+  means constructing a fresh Colormap, the same limitation matplotlib has.
+- `__reduce__` carries full constructor state.
+- `as_dict()` gains optional keys (interpolation plus the seven extreme colors) emitted only
+  when set, so existing payloads are unchanged; the pydantic serializer falls back to dict
+  form when a catalog colormap carries extremes. `_validate` already accepts the keys.
+- `bad` stays: it is the umbrella tier parallel to under/over above neg_inf/pos_inf, and
+  `masked` is the only class that can mark in-range values (predicate masking as a cheap
+  contour or polarity overlay).
+
+Whether this lands as commits on #151 or as a follow-up PR is the maintainer's choice; the
+draft reply asks. Still open from old item 6: `with_extremes` drops `identifier` (keep,
+re-derive, or none). Not raised in the reply to keep it scoped; ask when implementing.
+
+6. **Preserve the rest of the public state in copy/update paths.** Policy settled above;
+   identifier question still open.
 7. **Make reversal semantics complete and consistent.** `Colormap("name_r")` and
-   `Colormap("name").reversed()` should agree, including swapping under/over while preserving
-   bad. Needs the maintainer to confirm that swapping extremes is intended; it is defensible
-   either way.
-8. **Make persistence lossless.** Tagged state mapping for customized objects in
-   pickle/Pydantic/psygnal, with the default `as_dict()` shape unchanged. The largest of the
-   three and the one most likely to be rejected on scope.
+   `Colormap("name").reversed()` should agree. Swap policy settled above; maintainer
+   confirmation pending via the reply.
+8. **Make persistence lossless.** Approach settled above; scope risk resolved by the
+   maintainer raising it himself.
 
 ### Features
 
