@@ -3,6 +3,8 @@
 **Status:** Active
 **Last updated:** 2026-08-12
 **Scope:** cmap -> napari -> vispy rendering stack; CPU and GPU paths
+**Review:** Codex plan-review pass 1 (gpt-5.6-sol, xhigh) 2026-08-12; dispositions recorded
+below. All four blocking findings accepted or revised into this version.
 
 ## Context
 
@@ -22,7 +24,10 @@ its vendored vispy on 2026-08-12):
 - **CPU path** (`napari.utils.colormaps.Colormap.map()`, thumbnails, non-image layers):
   deterministic numpy. The model already has `nan_color` (default transparent),
   `high_color`, `low_color`, applied via `np.where`. cmap's `to_napari()` forwards
-  `nan|bad`, `over`, `under` into them since cmap #145.
+  `nan|bad`, `over`, `under` into them since cmap #145. Note the endpoint semantics:
+  napari applies `high_color` at `values >= 1` and `low_color` at `values <= 0`
+  (inclusive), while cmap's over/under apply strictly out of range. This is a
+  pre-existing divergence, documented rather than changed here (see N1).
 - **GPU path** (the image canvas): raw float32 texture upload, contrast limits applied in
   the vispy fragment shader. `apply_clim` detects NaN via `!(v <= 0.0 || 0.0 <= v)` and
   deliberately passes it through; the colormap lookup then does `clamp(t, 0.0, 1.0)`, which
@@ -32,6 +37,11 @@ its vendored vispy on 2026-08-12):
   which coincidentally matches cmap's under/over fallback. `nan_color`/`high_color`/
   `low_color` are never consulted on the GPU path. Masked arrays lose their mask before
   upload.
+- **Dtype boundary (load-bearing, from review finding B2):** the vispy layer's
+  `_on_data_change` calls `fix_data_dtype()` **before** `node.set_data()`, casting
+  float64 (and unsupported dtypes) to float32. Finite float64 values above float32 max
+  become infinity at that cast. Any classification or sanitization must therefore hook in
+  **before** `fix_data_dtype()`, at the layer/slice boundary, not at the visual.
 
 Design constraints taken from the GPU floating-point survey (reviewed 2026-08-12):
 
@@ -46,9 +56,26 @@ Design constraints taken from the GPU floating-point survey (reviewed 2026-08-12
 
 ## Current Decision
 
-Six stages, each independently shippable and testable. CPU correctness first, GPU
-classification second, capability probing and honest degradation reporting as a
-first-class deliverable rather than an afterthought.
+Stages with an explicit dependency DAG (revised per B1). CPU correctness first, a
+capability spike before any shader work, GPU classification with two candidate designs,
+and honest degradation reporting keyed to the actual render configuration.
+
+```
+Stage 0 (cmap)      ──────────────┐
+Stage 1 (CPU model) ──────┐       │
+Stage 4a (capability spike) ──┐   │
+                              ▼   ▼
+Stage 2 (GPU 2D images, design chosen from 4a + benchmarks)
+                              │
+Stage 3 (masked) ─────────────┤
+                              ▼
+Stage 4b (conformance probe + support record)
+                              ▼
+Stage 5 (volume modes)
+```
+
+Stage 1 and Stage 4a are independent and can proceed in parallel; Stage 2 needs both;
+Stage 4b probes the integrated result of Stages 2-3; Stage 5 builds on all of it.
 
 ### Stage 0 - cmap side (in flight)
 
@@ -70,12 +97,54 @@ Everything CPU-mapped (thumbnails, points/vectors/surface layers, any CPU fallba
 becomes correct for NaN and both infinities with no GPU work at all.
 
 **Check:** golden-array tests comparing `napari.Colormap.map()` against
-`cmap.Colormap.__call__` on `[-inf, under-range, in-range, over-range, +inf, nan]` for
-every fallback combination.
+`cmap.Colormap.__call__` on
+`[-inf, under-range, 0.0, in-range, 1.0, over-range, +inf, nan]` — the exact endpoints
+included per N1. At exactly 0.0 and 1.0 the two libraries legitimately differ (napari's
+inclusive `<= 0` / `>= 1` versus cmap's strict out-of-range); the test asserts each
+library's own documented contract and the divergence is flagged to the napari maintainers
+rather than silently changed.
+
+### Stage 4a - capability spike (before any integration work)
+
+A standalone offscreen harness, independent of napari's shader pipeline, answering the
+questions Stage 2's design choice depends on. It compiles minimal self-contained shaders
+(not the napari pipeline, which does not exist in modified form yet — this resolves the
+B1 circularity) and reads back rendered pixels:
+
+- Is `floatBitsToUint` available in this context (GLSL version / extension)?
+- Do NaN and inf bit patterns survive float32 texture upload and nearest sampling?
+- What does the *stock* pipeline's `clamp(NaN, 0, 1)` produce here (baseline
+  characterization of today's undefined behavior)?
+- Do comparison-based fallbacks (`v != v`, `abs(v) > FLT_MAX`) survive this driver's
+  compiler?
+
+Run first on Apple Silicon (GL-on-Metal fast-math is the highest-risk platform), then CI
+llvmpipe, then community platforms.
+
+**Check:** the harness itself must be falsifiable — a deliberately broken shader variant
+must produce a failing readback.
 
 ### Stage 2 - GPU classification for the 2D image path
 
-Insert a classification step in the fragment shader **ahead of** `apply_clim`:
+Two candidate designs, decided by Stage 4a results plus prototype benchmarks; the
+comparison was elevated to a first-class decision per review finding N2, and it is one of
+the two places human/maintainer judgment is explicitly required.
+
+**Common to both designs:**
+
+- The seven-color hierarchy is resolved on the CPU into at most four concrete RGBA
+  uniforms (cmap #151 does the same LUT-row resolution); the shader never sees the
+  fallback chain.
+- A CPU scan runs at the layer/slice boundary, **before `fix_data_dtype()`** (per B2), in
+  the same pass that already touches the data for contrast limits; skipped entirely for
+  integer dtypes. It detects whether exceptional values are present, and for float64 it
+  distinguishes true infinities from finite values above float32 max (clamping the latter
+  to +/-FLT_MAX before the cast so over-range stays over-range, with a warning).
+- Clean data pays nothing: with no exceptional values detected, both designs collapse to
+  the current pipeline (uniform-false branch or absent class texture).
+
+**Option A - in-shader bit classification.** `classify()` via `floatBitsToUint` ahead of
+`apply_clim`:
 
 ```glsl
 // requires floatBitsToUint: GLSL >= 1.30 / ES 3.0 / GL_ARB_shader_bit_encoding
@@ -89,23 +158,34 @@ int classify(float v) {
 }
 ```
 
-- The seven-color hierarchy is resolved on the CPU into at most four concrete RGBA
-  uniforms (cmap #151 does the same LUT-row resolution); the shader never sees the
-  fallback chain.
-- A CPU scan at `set_data` time (one `np.isfinite` reduction, amortized alongside the
-  contrast-limits pass, skipped entirely for integer dtypes) sets a
-  `u_has_exceptional` uniform. When false, the classification branch is uniform-false and
-  costs nothing; when true, it is ~6 ALU ops per fragment. Clean data pays zero.
-- Where `floatBitsToUint` is unavailable (GLSL 1.20 contexts), fall back to
-  comparison-based tests (`v != v` for NaN, `abs(v) > FLT_MAX` for inf) and let the
-  Stage 4 probe decide whether they actually work on that driver.
-- Upload hazards handled in the same CPU scan: float64 values above float32 max become
-  +/-inf at cast (clamp to +/-FLT_MAX before upload so over-range stays over-range, and
-  warn); float16 65504 keeps the guard cmap #151 established.
-- Filtering policy: classification is exact under `nearest` interpolation. Under
-  linear/cubic, the data texture is filtered before the shader sees a value, so an
-  exceptional texel poisons its filter footprint. That is documented behavior, not a bug
-  to fix here; NaN-excluding filtering is out of scope.
+No extra memory or texture fetch; works wherever raw data streams to the GPU. Needs the
+GLSL-version fallback story and depends on NaN/inf surviving upload (4a verifies), and
+classification is exact only under nearest filtering.
+
+**Option B - sidecar class texture + sanitized data.** The CPU scan emits an R8 class
+texture (finite / nan / +inf / -inf / masked) and uploads *sanitized* data (exceptional
+values replaced by their nearest finite clamp target). The shader samples the class
+texture with nearest filtering and branches; the data texture never contains a NaN or
+inf.
+
+Properties worth stating plainly: exceptional classes are data properties, independent of
+contrast limits, so CPU precomputation forfeits no interactivity; sanitized data makes
+linear/cubic filtering well-defined everywhere (no NaN poisoning); the fast-math and
+GLSL-version risks nearly vanish (nothing exotic in the shader), which collapses most of
+the Stage 4b probe surface; and Stage 3's mask becomes just a fifth class value in the
+same texture. Costs: one byte per texel while exceptional values are present, one extra
+texture fetch, and the pre-pass. Open question flagged by review: interaction with
+tiled/lazy/multiscale data paths.
+
+Lean: Option B for robustness where the data path is eager; Option A where data streams
+raw (tiled/lazy) or memory is tight. Possibly both, selected per path. The prototype
+benchmark and the napari maintainers settle it.
+
+**Filtering policy (both options):** under Option A, classification is exact only with
+`nearest` interpolation and an exceptional texel poisons its filter footprint under
+linear/cubic — documented behavior, reflected in the Stage 4b support record. Under
+Option B, filtering of sanitized data is well-defined, and the class texture (nearest)
+determines the class of the nearest texel.
 
 Mechanism: napari already rewrites vispy shader source in its own visual subclasses
 (`napari/_vispy/visuals/volume.py` splits and re-assembles the fragment shader), so the
@@ -115,40 +195,58 @@ subclass is a maintainer conversation, not a technical constraint.
 
 **Check:** offscreen render of a test texture through the real pipeline, read back with
 `gloo.read_pixels`, compared against the Stage 1 CPU reference; runs in CI under Mesa
-llvmpipe.
+llvmpipe. Test vectors include true float64 infinities *and* finite float64 values just
+above FLT_MAX, asserted to render differently (per B2).
 
 ### Stage 3 - masked data
 
-- Image layer accepts `numpy.ma.MaskedArray`; the mask is split off at the layer boundary
-  instead of being silently dropped.
+Scoped per review finding N3 to **eager in-memory `numpy.ma.MaskedArray` input only** in
+v1. Multiscale, lazy/dask, and thick-projection inputs carrying masks are rejected with a
+clear validation error naming the limitation, not silently stripped; today's silent
+`np.asarray()` stripping (in `_scalar_field/_slice.py` and multiscale materialization) is
+replaced by that explicit error for masked input on unsupported paths.
+
+- Image layer accepts eager `numpy.ma.MaskedArray`; the mask is split off at the layer
+  boundary (the same pre-`fix_data_dtype` hook as the Stage 2 scan).
 - CPU path: already correct via cmap semantics.
-- GPU path: optional R8 mask texture sampled with `nearest`, checked before value
-  classification (masked wins over the value it hides, matching cmap). Allocated only when
-  a mask exists: one byte per texel, zero cost otherwise.
-- A settable mask also delivers the in-range highlighting use case (predicate masking as a
-  cheap contour or polarity overlay) that no value-keyed class can express.
+- GPU path: under Option B the mask is a fifth class-texture value; under Option A it is
+  its own R8 texture sampled nearest, checked before value classification (masked wins
+  over the value it hides, matching cmap). Allocated only when a mask exists.
+- The settable-mask highlighting API (predicate masking as a cheap contour or polarity
+  overlay) is **deferred** to Deferred Work: it is a napari feature request in its own
+  right and should not ride along on the correctness work.
 
-**Check:** masked/NaN/inf all present in one array, GPU readback equals CPU reference;
-mask update without data re-upload.
+**Check:** masked/NaN/inf all present in one eager array, GPU readback equals CPU
+reference; mask update without data re-upload; multiscale masked input raises the
+documented error.
 
-### Stage 4 - capability probe and degradation reporting
+### Stage 4b - conformance probe and degradation reporting
 
 The mechanism the whole plan is accountable to: never silently render something other than
-what the colormap promises.
+what the colormap promises. Runs against the *integrated* pipeline from Stages 2-3
+(resolving the B1 circularity: 4a needed no integration, 4b requires it).
 
-- **Runtime probe:** at first canvas creation (piggybacking on napari's existing
-  `_opengl_context()` / `get_gl_extensions()` pattern, `lru_cache`d), render a 1x8 texture
-  of known values (finite endpoints, NaN, +/-inf, masked, denormal) through the actual
-  shader pipeline and read back. Compare to the CPU reference. This yields ground truth
-  per GPU/driver/compiler, which no spec table can: fast-math folding, `v_med3` slot
-  choice, and FTZ all show up in the readback.
-- **Support record:** per class, one of `exact` (renders the configured color),
+- **Runtime probe:** at first canvas creation (using napari's existing
+  `_opengl_context()` pattern), render a small texture of known values (finite endpoints,
+  NaN, +/-inf, masked, denormal) through the actual shader pipeline and read back,
+  comparing to the CPU reference.
+- **Support record, keyed per review finding B3:** support is a property of the
+  combination (GL context, node kind, texture format, interpolation mode, render mode) —
+  napari switches between image, tiled-image, and volume nodes by data size and display
+  dimensionality, and a single process-global cached verdict (the `lru_cache` pattern of
+  `get_gl_extensions()`) is wrong the moment any of those change. v1 claims `exact` only
+  for the configuration actually probed — the nearest-filtered 2D image node — and
+  reports every other configuration honestly as `fallback`, `undefined`, or `excluded`
+  until a probe for that configuration exists. The record is invalidated on context loss
+  and re-keyed on node/interpolation/format switches.
+- **Per class, per configuration, one of:** `exact` (renders the configured color),
   `fallback` (renders the pre-#151 legacy destination, e.g. inf as clim endpoint color),
-  `undefined` (probe readback matched neither). Exposed as
-  `viewer.exceptional_rendering_support` and per-layer.
+  `undefined` (probe readback matched neither), `excluded` (deliberate policy, see
+  Stage 5). Exposed as `viewer.exceptional_rendering_support` and per-layer.
 - **Warnings that fire only when they matter:** warn once per layer when (a) the data
   actually contains a class, and (b) the colormap configures a color for it, and (c) the
-  probe says support is not `exact`. Clean data or default colormaps never warn.
+  support record for the layer's current configuration is not `exact`. Clean data or
+  default colormaps never warn.
 - **Escape hatch:** an opt-in CPU pre-mapping mode (full RGBA mapped by cmap on the CPU,
   uploaded as a color texture). Correct on every GPU ever made, at 4x upload memory and
   loss of interactive clim changes. This is the guaranteed-correct floor the warning can
@@ -156,59 +254,105 @@ what the colormap promises.
 - **Docs:** a page recording probe results per platform, populated from CI and community
   reports rather than vendor documentation.
 
-**Check:** probe self-test (llvmpipe must report all-`exact` for the bit-pattern path);
-deliberately breaking the shader in a test build must flip the record to `undefined`.
+**Check:** probe self-test (llvmpipe must report all-`exact` for the probed
+configuration); deliberately breaking the shader in a test build must flip the record to
+`undefined`; switching a layer from image node to tiled-image node must re-key the
+record rather than reuse the cached verdict.
 
 ### Stage 5 - volume (3D) rendering
 
-Raymarch accumulation makes per-sample special colors ill-defined (the "max" of a NaN is
-meaningless in MIP; attenuation integrals cannot absorb a discrete class). Policy:
+napari exposes seven rendering modes; the review (B4) correctly noted the original plan
+covered four and overclaimed exclusion as the "only" coherent policy. Full matrix, with
+exclusion as the **proposed default** and the final policy an explicit napari-maintainer
+decision:
 
-- Plane/slice modes: same classification as 2D, full color support.
-- Accumulating modes (MIP, attenuated MIP, average, iso): exceptional voxels are
-  **excluded from accumulation** (treated as transparent), which is the only semantics
-  that does not corrupt neighboring rays; documented as such in the support record
-  (`excluded`, a fourth state alongside exact/fallback/undefined).
-- napari's existing volume-shader patching is the insertion point.
+| Mode | Proposed policy for exceptional voxels |
+|---|---|
+| `translucent` | classified color composited normally (front-to-back alpha) — coherent, since each sample contributes a color directly |
+| `additive` | classified color added like any other sample — coherent for the same reason |
+| `mip` | excluded from the max (a NaN has no magnitude; an inf would permanently saturate the ray) |
+| `minip` | excluded from the min (symmetric argument) |
+| `attenuated_mip` | excluded from both accumulation and attenuation |
+| `average` | excluded from the mean (matching `nanmean` intuition) |
+| `iso` | excluded from surface detection (a NaN/inf threshold crossing is not a surface) |
+| plane/slice modes | full 2D semantics (same classification as Stage 2) |
 
-**Check:** MIP over a volume with an interior NaN plane must equal MIP over the same
-volume with those voxels removed.
+Exclusion-vs-priority for the accumulating modes is judgment, not established fact; the
+design issue puts the matrix in front of the napari maintainers with exclusion as the
+default and per-mode overrides possible later. Modes shipped without implemented
+exceptional handling report `excluded` (or `fallback`) in the Stage 4b support record —
+no mode is left with silently unspecified behavior.
+
+**Check:** per-mode tests; e.g. MIP over a volume with an interior NaN plane must equal
+MIP over the same volume with those voxels removed; `translucent` with an exceptional
+voxel must show the classified color at that sample.
 
 ## Sequencing and venue
 
-Stage 1 and the Stage 4 probe have no dependency on each other and can proceed in
-parallel; Stage 2 needs both. Prototype stages 1-4 in a napari fork (napari's existing
-shader-patching precedent means no vispy release is on the critical path), then bring a
-design issue to napari, where the #151 thread has already pinged jni and tlambert03
-maintains both vispy and cmap. The venue question (vispy `ImageVisual` vs napari subclass)
-is theirs to settle; the prototype works either way. WebGPU/vispy-next is explicitly not
-blocked on: gpuweb is still debating NaN-in-clamp (gpuweb#5192), and
-classify-before-arithmetic with bit tests is the design that survives that outcome too.
+Stage 1 and Stage 4a first, in parallel. Stage 2's design choice (Option A vs B) is made
+after 4a results and a small benchmark, with maintainer input. Prototype stages 1-4 in a
+napari fork (napari's existing shader-patching precedent means no vispy release is on the
+critical path), then bring a design issue to napari, where the #151 thread has already
+pinged jni and tlambert03 maintains both vispy and cmap. The venue question (vispy
+`ImageVisual` vs napari subclass) is theirs to settle; the prototype works either way.
+WebGPU/vispy-next is explicitly not blocked on: gpuweb is still debating NaN-in-clamp
+(gpuweb#5192), and both candidate designs (classify-before-arithmetic; sanitized data +
+class texture) survive that outcome.
 
 ## Alternatives Considered
 
 - **Sentinel substitution on upload** (recode exceptional values as reserved finite
-  values): rejected; any finite sentinel collides with legal data, and re-encoding on
-  every clim change forfeits the GPU clim advantage.
+  values in the *data* texture): rejected; any finite sentinel collides with legal data.
+  Note this is distinct from Option B, which sanitizes data but carries class identity in
+  a separate texture rather than in-band.
 - **Pre-normalized CPU upload always**: correct everywhere but gives up interactive
-  contrast limits and 4x memory; kept only as the Stage 4 escape hatch.
+  contrast limits and 4x memory; kept only as the Stage 4b escape hatch.
 - **Whitelist GPUs from the survey document**: rejected; the survey itself shows behavior
   varies by driver revision and compiler slot allocation. Probing the real pipeline is
   cheaper and true.
 - **`isnan()` in shaders**: rejected as primary mechanism (fast-math folding); retained
-  only as the probed fallback for GLSL 1.20 contexts.
+  only as the 4a-probed fallback for GLSL 1.20 contexts under Option A.
+
+## Review record - Codex pass 1 (gpt-5.6-sol, xhigh, 2026-08-12)
+
+All reviewer citations were verified against the installed napari 0.8.0 sources before
+disposition.
+
+| ID | Finding | Disposition | Rationale / Change |
+|---|---|---|---|
+| B1 | Stage 2 <-> Stage 4 dependency cycle; probe referenced masked before Stage 3 | Accepted | Stage 4 split into 4a (pre-integration capability spike on standalone shaders) and 4b (post-integration conformance probe); explicit DAG added |
+| B2 | Scan placed after `fix_data_dtype()` casts float64 -> float32, destroying the finite-overflow / true-inf distinction | Accepted | Scan and mask extraction moved to the layer/slice boundary before `fix_data_dtype()`; test vectors now include finite float64 above FLT_MAX distinct from true inf |
+| B3 | Support record omitted state (node kind, interpolation, format, mode) that changes correctness; `lru_cache` precedent is process-global | Revised | Record keyed by (context, node, format, interpolation, mode); v1 claims `exact` only for the probed nearest-2D-image configuration; invalidation and re-keying specified |
+| B4 | Volume policy covered 4 of 7 modes and overclaimed exclusion as the only coherent semantics | Revised | Full seven-mode matrix with per-mode proposed policy; exclusion demoted from "only" to "proposed default"; explicit maintainer decision point |
+| N1 | Golden tests omitted the 0/1 endpoints where napari (inclusive) and cmap (strict) legitimately differ | Accepted | Endpoints added to test vectors; divergence documented as pre-existing and flagged to maintainers, not silently changed |
+| N2 | Unified R8 class texture + sanitized data deserves comparison against bit classification | Revised | Elevated to first-class Option B with honest tradeoff statement; decision assigned to 4a results + benchmark + maintainers |
+| N3 | Mask support scope undefined for multiscale/lazy/thick-projection; settable-mask API is scope creep | Accepted | Stage 3 scoped to eager arrays with explicit validation errors elsewhere; settable-mask API moved to Deferred Work |
+
+### Open items requiring human/maintainer judgment
+
+| Topic | Position in this plan | Decision owner |
+|---|---|---|
+| Option A (bit classification) vs Option B (class texture + sanitized data) | Lean B for eager paths, A for streaming; benchmark first | napari maintainers + owner, after Stage 4a |
+| Volume accumulating-mode policy (exclusion vs exceptional-color priority) | Exclusion as default | napari maintainers |
+
+Recommendation after pass 1 dispositions: proceed to Stage 1 / Stage 4a implementation;
+no unresolved blocking findings remain.
 
 ## Deferred Work
 
+- Settable-mask highlighting API (predicate masking as contour/polarity overlay) — moved
+  here from Stage 3 per N3.
 - NaN-excluding texture filtering (linear interpolation that ignores exceptional
-  neighbors).
+  neighbors) — moot under Option B, which is part of why Option B is attractive.
+- Mask support for multiscale/lazy/dask data paths.
 - Labels/segmentation layers (integer-valued; no exceptional classes).
 - Plugin-facing API for custom classification (e.g. user-defined sentinel classes).
 
 ## Next Steps
 
-1. Codex plan-review of this document per the standing MCSLAB loop.
+1. ~~Codex plan-review~~ — done 2026-08-12; dispositions above.
 2. Stage 1 implementation in a napari worktree, red/green.
-3. Stage 4 probe prototype (offscreen readback harness) on the owner's Apple Silicon
-   machine, since Apple's GL-on-Metal is the highest-risk platform.
-4. Design issue draft for napari once 1 and the probe agree locally; owner posts.
+3. Stage 4a capability-spike harness on the owner's Apple Silicon machine (GL-on-Metal is
+   the highest-risk platform), then llvmpipe in CI.
+4. Option A/B benchmark once 4a reports; then the design issue draft for napari; owner
+   posts.
