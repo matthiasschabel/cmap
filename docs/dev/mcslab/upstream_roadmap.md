@@ -42,14 +42,24 @@ dependency group, so `tests/test_model_fields.py` silently skips without `--with
 Upstream also shipped its own `crameri` v8 correction (#143) on top of our orientation fix
 (#141).
 
-`integration` has been merged up to `upstream/main` and now carries only the #150 work plus
-this `docs/dev/mcslab/` tree and the `mkdocs.yml` exclusion. The five merged branches and
-their worktrees are deleted; the `interp-aliasing` worktree remains while #150 is open.
+### Reconciled with upstream, 2026-08-13
 
-#150 was rebased onto the post-merge `upstream/main` on 2026-08-10, because #147's regression
-test landed at the same point in `tests/test_colormap.py` and left the PR conflicting. The
-rebased branch was force-pushed to the fork the same day with the owner's authorization, and
-GitHub now reports the PR mergeable. It remains a draft.
+#150 and #152 were verified landed by reading the changed lines in `upstream/main` rather than
+by ancestry, which squash-merging makes useless: the byteswap line, `_with_interpolation`, both
+of its call sites, and all three regression tests are present verbatim, with no maintainer
+edits during merge. Their branches and worktrees are gone locally, and the two branches were
+deleted from the fork with the owner's authorization. `origin/main` was fast-forwarded to
+`f0a4aec` so future branches cut from the fork's default start from the right base.
+
+What remains is exactly the two open PRs. `feat/exceptional-colors` and `fix/state-preservation`
+are the only local branches besides `main` and `integration`, each with a worktree, each tracking
+its fork branch, and each matching its PR head SHA (`9380611`, `4302481`; both report mergeable).
+
+`integration` is `upstream/main` plus those two branches plus this `docs/dev/mcslab/` tree and
+the `mkdocs.yml` exclusion. Checked, not assumed: `upstream/main` and both open branches are
+ancestors of it, and diffing `integration` against `fix/state-preservation` over `src`, `tests`,
+`docs`, and `mkdocs.yml` yields the eleven mcslab notes and the four `mkdocs.yml` lines, nothing
+else. No code has drifted onto `integration` that is not in a PR.
 
 ## Context
 
@@ -236,17 +246,13 @@ keeps application policy downstream.
   fixed (#147, #150); nothing has decided whether the constructor should copy in general. Doing
   so would change the memory profile of every catalog construction, so it needs a measurement,
   not an opinion.
-- The `interp-aliasing` and `byteswap` worktrees are held by merged PRs (#150, #152) and can go.
-  `exceptional-colors` and `state-preservation` are live. Each carries its own `.venv`, about
-  600 MB.
-- The merged branches still exist on the `matthiasschabel/cmap` fork. Deleting them is a remote
-  mutation and needs the repository owner to say so.
+- Each worktree carries its own `.venv` and costs about 1.1 GB. Only `exceptional-colors` and
+  `state-preservation` remain; remove each as its PR closes.
 
 ## Next Steps
 
 1. Mark #155 ready for review once #151 draws @jni's response, so the two do not arrive together.
-2. Remove the `interp-aliasing` and `byteswap` worktrees; both PRs are merged.
-3. Build the signed-infinity work (item 9) behind the MCS compatibility layer, where it does not
+2. Build the signed-infinity work (item 9) behind the MCS compatibility layer, where it does not
    wait on review.
-4. Raise the MCS cmap floor and delete the corresponding fallbacks once the seven merged fixes
+3. Raise the MCS cmap floor and delete the corresponding fallbacks once the seven merged fixes
    ship in a release. They are in `main` but unreleased; the current floor is `cmap>=0.7`.
