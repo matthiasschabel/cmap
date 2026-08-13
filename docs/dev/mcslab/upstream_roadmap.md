@@ -25,12 +25,19 @@ against this project land.
 #150 and #152 merging left #151 conflicting, so `feat/exceptional-colors` was rebased onto
 `upstream/main` on 2026-08-13. The conflict was the predicted one, two lines apart in `__call__`:
 keep the byteswap line and #151's mask block. Pre-rebase SHA `0587c892`, post-rebase `9380611`.
-**The rebased branch has not been force-pushed**; #151 still shows the pre-rebase commits and
-still reports conflicting. That push needs the owner's authorization.
+Force-pushed the same day with the owner's authorization; #151 now reports mergeable and its diff
+is the one feature commit alone, since #150's two commits are no longer riding along.
 
-#155 is cut from the rebased #151 and is mergeable, so it carries the correct resolution already.
-Its plan, dispositions from two codex review passes, and PR body are in
-`state_preservation_plan.md` and `state_preservation_pr_body.md`.
+#155 is cut from the rebased #151, so it carries the same resolution. Its plan, dispositions from
+two codex review passes, and PR body are in `state_preservation_plan.md` and
+`state_preservation_pr_body.md`.
+
+`integration` was updated in the same pass: merging `fix/state-preservation` brought
+`upstream/main` into the history for the first time since the five-PR landing, and one conflict
+in `with_extremes()` where integration still held the old clearing behavior. Resolved to the
+preserving side. 264 passed, 1 skipped, 1 xfailed under
+`THIRD=1 CI=1 pytest` with `pydantic-compat` added; note that `pydantic_compat` is in no
+dependency group, so `tests/test_model_fields.py` silently skips without `--with pydantic-compat`.
 
 Upstream also shipped its own `crameri` v8 correction (#143) on top of our orientation fix
 (#141).
@@ -237,13 +244,9 @@ keeps application policy downstream.
 
 ## Next Steps
 
-1. **Force-push the rebased `feat/exceptional-colors`** so #151 stops reporting conflicts. Needs
-   the owner's authorization; the rebase itself is done and tested.
-2. Merge `fix/state-preservation` into `integration` with `--no-ff`. `integration` still carries
-   the pre-rebase `exceptional-colors` and `byteswap` merges, so expect the merge to be the point
-   where those two resolutions meet.
-3. Mark #155 ready for review once #151 draws @jni's response, so the two do not arrive together.
-4. Build the signed-infinity work (item 9) behind the MCS compatibility layer, where it does not
+1. Mark #155 ready for review once #151 draws @jni's response, so the two do not arrive together.
+2. Remove the `interp-aliasing` and `byteswap` worktrees; both PRs are merged.
+3. Build the signed-infinity work (item 9) behind the MCS compatibility layer, where it does not
    wait on review.
-5. Raise the MCS cmap floor and delete the corresponding fallbacks once the seven merged fixes
+4. Raise the MCS cmap floor and delete the corresponding fallbacks once the seven merged fixes
    ship in a release. They are in `main` but unreleased; the current floor is `cmap>=0.7`.
