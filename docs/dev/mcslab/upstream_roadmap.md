@@ -1,14 +1,14 @@
 # MCSLAB cmap upstream roadmap
 
 **Status:** Active
-**Last updated:** 2026-08-12
+**Last updated:** 2026-08-13
 **Scope:** small upstream cmap contributions that allow MCSLAB to reduce its colormap layer
 
 ## Where this stands
 
-**Five of the six pull requests merged upstream on 2026-08-10.** Only #150 is still open. The
-maintainer took every defect fix without requesting changes, which answers the question the
-queue was paused on: small, single-defect PRs against this project land.
+**Seven of the nine pull requests are merged.** The maintainer took every defect fix without
+requesting changes, which answers the question the queue was paused on: small, single-defect PRs
+against this project land.
 
 | PR | Subject | State |
 |---|---|---|
@@ -17,9 +17,20 @@ queue was paused on: small, single-defect PRs against this project land.
 | #147 | `ColorStops.reversed()` corrupts its source | merged |
 | #148 | unmasked NaNs lost in a masked array | merged |
 | #149 | exceptional-value documentation | merged; was stacked on #148 |
-| #150 | interpolation rewritten on borrowed stops, and dropped by `with_extremes()` | **open**, draft |
-| #151 | per-class colors for `neg_inf`, `pos_inf`, `nan`, `masked` (#144) | **open**, draft; stacked on #150; maintainer receptive 2026-08-12, reply drafted |
-| #152 | non-native byte order reinterpreted instead of byteswapped | **open**, draft |
+| #150 | interpolation rewritten on borrowed stops, and dropped by `with_extremes()` | merged as `f0a4aec` |
+| #151 | per-class colors for `neg_inf`, `pos_inf`, `nan`, `masked` (#144) | **open**, ready; maintainer approved 2026-08-13 pending @jni's read of the API |
+| #152 | non-native byte order reinterpreted instead of byteswapped | merged as `d1521b1` |
+| #155 | state lost by `reversed()`, `with_extremes()`, pickle, and `as_dict()` | **open**, draft; stacked on #151 |
+
+#150 and #152 merging left #151 conflicting, so `feat/exceptional-colors` was rebased onto
+`upstream/main` on 2026-08-13. The conflict was the predicted one, two lines apart in `__call__`:
+keep the byteswap line and #151's mask block. Pre-rebase SHA `0587c892`, post-rebase `9380611`.
+**The rebased branch has not been force-pushed**; #151 still shows the pre-rebase commits and
+still reports conflicting. That push needs the owner's authorization.
+
+#155 is cut from the rebased #151 and is mergeable, so it carries the correct resolution already.
+Its plan, dispositions from two codex review passes, and PR body are in
+`state_preservation_plan.md` and `state_preservation_pr_body.md`.
 
 Upstream also shipped its own `crameri` v8 correction (#143) on top of our orientation fix
 (#141).
@@ -109,17 +120,20 @@ not yet posted):
   `masked` is the only class that can mark in-range values (predicate masking as a cheap
   contour or polarity overlay).
 
-Whether this lands as commits on #151 or as a follow-up PR is the maintainer's choice; the
-draft reply asks. Still open from old item 6: `with_extremes` drops `identifier` (keep,
-re-derive, or none). Not raised in the reply to keep it scoped; ask when implementing.
+The maintainer answered on 2026-08-13: "I suppose we should go ahead and split that fix out into
+a new PR. And it needn't hold this one up either." Singular PR, and no dependency in the other
+direction. Items 6, 7, and 8 are therefore **one** PR, #155, and there is no fifth PR extending
+the fix to #151's four colors: #155 is stacked on #151 and covers all seven at once.
 
-6. **Preserve the rest of the public state in copy/update paths.** Policy settled above;
-   identifier question still open.
-7. **Make reversal semantics complete and consistent.** `Colormap("name_r")` and
-   `Colormap("name").reversed()` should agree. Swap policy settled above; maintainer
-   confirmation pending via the reply.
-8. **Make persistence lossless.** Approach settled above; scope risk resolved by the
-   maintainer raising it himself.
+The `identifier` question is settled in #155 rather than asked: identifier travels with the
+name, so `reversed()` and `shifted()` let it re-derive and `with_extremes()` preserves it. The
+double-reversal consequence is stated in the PR body for the maintainer to overrule.
+
+6. **Preserve the rest of the public state in copy/update paths.** #155.
+7. **Make reversal semantics complete and consistent.** #155, including the `__init__` swap that
+   makes `Colormap("x_r")` agree with `Colormap("x").reversed()`.
+8. **Make persistence lossless.** #155, with two documented exclusions: `info` is not restored
+   through the dict form, and the converters still cannot express the finer classes.
 
 ### Features
 
@@ -215,21 +229,21 @@ keeps application policy downstream.
   fixed (#147, #150); nothing has decided whether the constructor should copy in general. Doing
   so would change the memory profile of every catalog construction, so it needs a measurement,
   not an opinion.
-- Only the `interp-aliasing` worktree under `~/GitHub/cmap-feat/` remains, held while #150 is
-  open. The other five were removed on 2026-08-10, reclaiming about 3.7 GB of per-worktree
-  `.venv`.
+- The `interp-aliasing` and `byteswap` worktrees are held by merged PRs (#150, #152) and can go.
+  `exceptional-colors` and `state-preservation` are live. Each carries its own `.venv`, about
+  600 MB.
 - The merged branches still exist on the `matthiasschabel/cmap` fork. Deleting them is a remote
   mutation and needs the repository owner to say so.
 
 ## Next Steps
 
-1. **Mark #150 ready for review** when the owner chooses to. The rebase and force-push are
-   done and the PR is mergeable; it is still a draft, so no maintainer sees it yet.
-2. The queue is no longer blocked on "does anything land". Five merges answer that. Items 7 and
-   8 can be planned once #150 draws a review, since it is the one carrying copy semantics.
-3. Ask the item 6 API question as an issue, not a PR: what should an omitted `bad`/`under`/`over`
-   mean in `with_extremes`, and should a modified copy keep the original `identifier`?
-4. Meanwhile, build the signed-infinity work (item 9) behind the MCS compatibility layer, where
-   it does not wait on review.
-5. Raise the MCS cmap floor and delete the corresponding fallbacks once the five merged fixes
+1. **Force-push the rebased `feat/exceptional-colors`** so #151 stops reporting conflicts. Needs
+   the owner's authorization; the rebase itself is done and tested.
+2. Merge `fix/state-preservation` into `integration` with `--no-ff`. `integration` still carries
+   the pre-rebase `exceptional-colors` and `byteswap` merges, so expect the merge to be the point
+   where those two resolutions meet.
+3. Mark #155 ready for review once #151 draws @jni's response, so the two do not arrive together.
+4. Build the signed-infinity work (item 9) behind the MCS compatibility layer, where it does not
+   wait on review.
+5. Raise the MCS cmap floor and delete the corresponding fallbacks once the seven merged fixes
    ship in a release. They are in `main` but unreleased; the current floor is `cmap>=0.7`.
