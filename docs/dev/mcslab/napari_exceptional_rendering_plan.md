@@ -1,7 +1,7 @@
 # napari support for cmap #151 exceptional-value semantics: staged plan
 
 **Status:** Active
-**Last updated:** 2026-08-22
+**Last updated:** 2026-08-22 (second pass: Stage 2 image path)
 **Scope:** cmap -> napari -> vispy rendering stack; CPU and GPU paths
 **Review:** Codex plan-review pass 1 (gpt-5.6-sol, xhigh) 2026-08-12; dispositions recorded
 below. All four blocking findings accepted or revised into this version.
@@ -205,7 +205,54 @@ llvmpipe, then community platforms.
 **Check:** the harness itself must be falsifiable — a deliberately broken shader variant
 must produce a failing readback.
 
-### Stage 2 - GPU classification for the 2D image path
+### Stage 2 - GPU classification for the 2D image path  [IMPLEMENTED 2026-08-22, image path only]
+
+Landed on the fork as `feature/gpu-exceptional-colors`, merged into `integration`. Neither
+Option A nor Option B as the plan framed them: the probe found a third route that needs no
+bit access and no CPU pass.
+
+**Design.** Classification moves ahead of the clim clamp, because clamping is what destroys
+the distinction between an infinity and a saturated finite value. The class then travels to
+the colormap as a negative sentinel (-1 NaN, -2 +inf, -3 -inf; normalized data is in [0, 1],
+so anything below -0.5 is unambiguous). `apply_gamma` passes sentinels through untouched,
+since `pow()` of a negative base is NaN. The colormap function decodes them in a prologue
+injected ahead of every check vispy injects, because a sentinel is negative and vispy's
+`low` check would otherwise swallow it. Fallbacks resolve on the CPU when the colormap is
+built, so the per-fragment path carries no fallback logic and a colormap that sets no
+infinity colors renders exactly as before.
+
+Three source files, all additive: `_vispy/visuals/image.py` (override vispy's `clim_float`
+and `gamma_float` templates, bind the bound uniform by template-variable name rather than
+chain position), `utils/colormaps/colormap_utils.py` (sentinels, fallback resolution, a
+`VispyColormap` subclass that injects the prologue), and `utils/colormaps/colormap.py` from
+Stage 1. napari already subclasses `VispyColormap` and rewrites `glsl_map` for labels, so
+this uses an existing seam rather than a new one.
+
+**The NaN test is the subtle part, and the first two attempts were wrong.** The isolated
+idiom probe endorsed `(v * 0.0) != 0.0 && !gt_max && !lt_min`; that same expression folds to
+false inside the real chain, because the surrounding infinity tests give the compiler enough
+to prove the conjunction impossible under its no-NaN assumption. Replacing the literal with
+a uniform does not help either: `v <= X || X <= v` is provable for any single bound X. What
+survives is two bounds the compiler cannot relate, `!(v <= $flt_max) && !(v >= -$flt_max)`,
+where refuting it would require knowing `$flt_max >= -$flt_max` and a uniform denies it that.
+A test asserts the shape of that expression, because writing the bound as a literal would
+reintroduce the bug on Apple Silicon while every CPU-side test kept passing.
+
+**No CPU pass is needed on this platform.** The open question in the plan was how much CPU
+preprocessing the semantics would cost. On hardware measured so far the answer is none: the
+GPU classifies all four classes itself, the cost is three comparisons per fragment, and it is
+paid only in the float image path. The CPU fallback is still the right design for a driver
+that folds even this test, and the runtime check for that has to compile and run the shipped
+shader, not a proxy idiom, which is precisely what the isolated probe got wrong.
+
+**Verified** by rendering through napari's own visual on an Apple M5: all eight classes route
+correctly, against neg_inf and pos_inf collapsing onto low_color and high_color and NaN onto
+low_color before the change. 487 vispy and colormap tests green.
+
+**Not covered:** the volume path (own shaders, Stage 5), masked arrays (Stage 3; needs a mask
+to reach the GPU at all, which napari's data model does not yet carry), and multiscale or
+tiled paths beyond what the shared image visual covers.
+
 
 Two candidate designs, decided by Stage 4a results plus prototype benchmarks; the
 comparison was elevated to a first-class decision per review finding N2, and it is one of
