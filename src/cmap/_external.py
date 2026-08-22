@@ -117,6 +117,11 @@ def to_napari(cm: Colormap) -> NapariColormap:
             kwargs["high_color"] = cm.over_color.rgba
         if "low_color" in param_names and cm.under_color is not None:
             kwargs["low_color"] = cm.under_color.rgba
+        # napari 0.9 splits the infinities out of high/low_color
+        if "neg_inf_color" in param_names and cm.neg_inf_color is not None:
+            kwargs["neg_inf_color"] = cm.neg_inf_color.rgba
+        if "pos_inf_color" in param_names and cm.pos_inf_color is not None:
+            kwargs["pos_inf_color"] = cm.pos_inf_color.rgba
     return Colormap(**kwargs)
 
 
