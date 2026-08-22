@@ -42,6 +42,34 @@ dependency group, so `tests/test_model_fields.py` silently skips without `--with
 Upstream also shipped its own `crameri` v8 correction (#143) on top of our orientation fix
 (#141).
 
+### Downstream work started, 2026-08-22
+
+The napari side of #151 is now underway on the fork, per
+`napari_exceptional_rendering_plan.md`. Nothing is pushed and nothing is posted.
+
+- **napari Stage 1** (`feature/colormap-inf-colors`, merged into the fork's `integration`):
+  `pos_inf_color` and `neg_inf_color` on `napari.utils.colormaps.Colormap`, overriding
+  `high_color`/`low_color` for the infinities only and falling back to them when unset.
+  Also pops the two fields in `_napari_cmap_to_vispy`, without which every colormap
+  conversion raises `TypeError`.
+- **cmap forwarding** (`feat/napari-inf-color-forwarding`, stacked on
+  `feat/exceptional-colors`, merged into `integration`): five lines in `to_napari()` behind
+  the existing `_napari_colormap_param_names()` detection, so it stays inert on napari
+  versions without the fields. **Held**: no PR until napari accepts them, and it must be
+  rebased if #151 moves again.
+- **napari Stage 4a** (`dev/gl-exceptional-probe`): a GL capability probe in the fork's
+  `docs/dev/exceptional_rendering/`. Its Apple M5 result found that vispy's own NaN test
+  is folded away by Metal's fast math, so **NaN currently renders as the bottom of the
+  colormap on Apple Silicon instead of `nan_color`**. That is an upstream napari bug with
+  a one-line fix, independent of everything cmap is doing, and it is the natural lead for
+  the napari design issue.
+
+One pre-existing cmap defect surfaced while testing against napari main:
+`tests/test_data.py::test_napari_name_parity` reads `_VISPY_COLORMAPS_ORIGINAL`, which
+napari has removed. It fails on unmodified `feat/exceptional-colors` too. cmap's test suite
+will break when napari 0.9 releases. Candidate for a small standalone PR, unrelated to the
+current queue.
+
 ### Reconciled with upstream, 2026-08-13
 
 #150 and #152 were verified landed by reading the changed lines in `upstream/main` rather than
@@ -256,3 +284,6 @@ keeps application policy downstream.
    wait on review.
 3. Raise the MCS cmap floor and delete the corresponding fallbacks once the seven merged fixes
    ship in a release. They are in `main` but unreleased; the current floor is `cmap>=0.7`.
+4. Rebase `feat/napari-inf-color-forwarding` if #151 moves again; it is stacked on it.
+5. Consider a standalone cmap PR for the `_VISPY_COLORMAPS_ORIGINAL` breakage against
+   napari main, independent of the exceptional-color queue.

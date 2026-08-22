@@ -1,7 +1,7 @@
 # napari support for cmap #151 exceptional-value semantics: staged plan
 
 **Status:** Active
-**Last updated:** 2026-08-12
+**Last updated:** 2026-08-22
 **Scope:** cmap -> napari -> vispy rendering stack; CPU and GPU paths
 **Review:** Codex plan-review pass 1 (gpt-5.6-sol, xhigh) 2026-08-12; dispositions recorded
 below. All four blocking findings accepted or revised into this version.
@@ -84,7 +84,33 @@ the semantic source of truth; nothing downstream should re-derive the fallback h
 **Check:** cmap test suite; the resolution table above is pinned by
 `test_exceptional_colors_fall_back_to_the_legacy_extremes`.
 
-### Stage 1 - napari colormap model + CPU-correct rendering
+### Stage 1 - napari colormap model + CPU-correct rendering  [IMPLEMENTED 2026-08-22]
+
+Landed on the fork: `feature/colormap-inf-colors` (napari, commit 54cbfb8c) and
+`feat/napari-inf-color-forwarding` (cmap, stacked on `feat/exceptional-colors`), both
+merged into their repo's `integration`. Neither is pushed and neither has a PR; the cmap
+branch is held until napari accepts the fields.
+
+Two things the plan did not anticipate, both caught by review and confirmed in code:
+`_napari_cmap_to_vispy()` passes the whole `model_dump()` to `VispyColormap`, so the new
+fields had to be popped there or every image, surface, and colorbar conversion raises
+`TypeError`; and `same_colors()` already compares nan/high/low, so the new fields had to
+join it or the colormap registry would deduplicate maps that differ only in an infinity
+color. A test covers each. The legacy-default test encodes the pre-change outputs over
+`[-inf, -0.5, 0, 0.5, 1, 1.5, +inf, nan]` in both interpolation modes, so a behavior
+change for colormaps that do not set the new fields fails loudly.
+
+Verification: 246 colormap tests, 907 utils tests, 2103 layer tests, 185 vispy tests
+green on the merged fork `integration`; cmap 246 tests green with the forwarding, and the
+forwarding test passes both against released napari 0.8.0 (inert) and against the fork
+(forwarded).
+
+Unrelated breakage found while running the cmap suite against napari main: cmap's
+`tests/test_data.py::test_napari_name_parity` reads
+`colormap_utils._VISPY_COLORMAPS_ORIGINAL`, which napari has removed. It fails on the
+unmodified base branch too, so it is a pre-existing incompatibility that will bite cmap
+when napari 0.9 releases. Worth a separate upstream issue; not part of this work.
+
 
 Extend napari's `Colormap` model with `neg_inf_color` and `pos_inf_color` (default `None`
 -> fall back to `low_color`/`high_color` exactly as cmap falls back to under/over), and
@@ -104,7 +130,43 @@ inclusive `<= 0` / `>= 1` versus cmap's strict out-of-range); the test asserts e
 library's own documented contract and the divergence is flagged to the napari maintainers
 rather than silently changed.
 
-### Stage 4a - capability spike (before any integration work)
+### Stage 4a - capability spike (before any integration work)  [IMPLEMENTED 2026-08-22]
+
+Landed on the napari fork as `dev/gl-exceptional-probe` (commit a28f1c99), merged into
+`integration`, in `docs/dev/exceptional_rendering/` (force-added; the fork gitignores
+`docs`). Six suites, each in its own subprocess, every verdict compared against a numpy
+value computed first; `--self-test` inverts the expectations and must report every idiom
+failing. Results are keyed by renderer slug so they accumulate across machines.
+
+**Apple M5, GL 2.1 Metal - 90.5, GLSL 1.20** (`results/apple-m5-2-1-metal-90-5.json`):
+
+- **Option A is unreachable here, not merely unavailable.** GLSL 130 is rejected,
+  `GL_ARB_shader_bit_encoding` is absent from all 133 extensions, and setting Qt's
+  default surface format to 3.3 core before any context exists still yields a 2.1
+  context. Bit classification on Apple Silicon would require changing how napari and
+  vispy create contexts.
+- **vispy's NaN test does not work on this driver.** `!(data <= 0.0 || 0.0 <= data)`
+  from `_APPLY_CLIM_FLOAT` returns false for NaN, as do `v != v` and `!(v == v)`. All
+  three are self-comparisons, which is what fast math folds, and Metal enables fast math
+  by default. The stock-baseline probe shows the consequence: NaN renders as the bottom
+  of the colormap, not as `nan_color`. This is a live napari bug independent of the cmap
+  work, and it is the strongest thing to lead the design issue with.
+- **A NaN test that survives exists.** `(v * 0.0) != 0.0` is true for NaN and both
+  infinities and is not a self-comparison, so removing the two infinity cases isolates
+  NaN. It classifies all thirteen probe values correctly, payload NaN included. So a
+  GLSL 1.20 shader can tell the four classes apart here without reading any bits.
+- **Uploads preserve the classes**; r32f works. Bit-exactness is reported `unavailable`
+  rather than `pass`, because without `floatBitsToUint` the payload and subnormal bits
+  are not observable. The harness does not claim more than it can see.
+- **Linear filtering poisons exactly one texel on each side** (2.0 texels of output for a
+  one-texel NaN, against 1.0 under nearest). Classification after filtering misclassifies
+  a one-texel border around every exceptional value under magnification.
+
+This moves the Option A/B decision but does not close it: Apple rules out A's mechanism
+outright, and the comparison-based classification Option B needs anyway works. NVIDIA and
+Mesa are where A is likely available and may point the other way; the harness is built to
+accumulate those results.
+
 
 A standalone offscreen harness, independent of napari's shader pipeline, answering the
 questions Stage 2's design choice depends on. It compiles minimal self-contained shaders
@@ -332,7 +394,7 @@ disposition.
 
 | Topic | Position in this plan | Decision owner |
 |---|---|---|
-| Option A (bit classification) vs Option B (class texture + sanitized data) | Lean B for eager paths, A for streaming; benchmark first | napari maintainers + owner, after Stage 4a |
+| Option A (bit classification) vs Option B (class texture + sanitized data) | After the Apple 4a result: A is unreachable on Apple Silicon, and the GLSL 1.20 comparison classification B needs works. Lean B, pending NVIDIA/Mesa runs | napari maintainers + owner |
 | Volume accumulating-mode policy (exclusion vs exceptional-color priority) | Exclusion as default | napari maintainers |
 
 Recommendation after pass 1 dispositions: proceed to Stage 1 / Stage 4a implementation;
@@ -351,8 +413,12 @@ no unresolved blocking findings remain.
 ## Next Steps
 
 1. ~~Codex plan-review~~ — done 2026-08-12; dispositions above.
-2. Stage 1 implementation in a napari worktree, red/green.
-3. Stage 4a capability-spike harness on the owner's Apple Silicon machine (GL-on-Metal is
-   the highest-risk platform), then llvmpipe in CI.
-4. Option A/B benchmark once 4a reports; then the design issue draft for napari; owner
-   posts.
+2. ~~Stage 1 implementation in a napari worktree, red/green~~ — done 2026-08-22.
+3. ~~Stage 4a capability-spike harness on the owner's Apple Silicon machine~~ — done
+   2026-08-22; findings in the Stage 4a section.
+4. Run the harness on NVIDIA and on Mesa/llvmpipe. Until then the Option A/B decision
+   rests on one platform.
+5. Draft the napari design issue, leading with the broken NaN test rather than with the
+   cmap semantics: it is a standalone bug with a one-line fix that any maintainer can
+   verify, and it makes the larger case concrete. Owner posts; an agent never submits.
+6. Option A/B benchmark once more platforms report, then Stage 2.
