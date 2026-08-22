@@ -99,6 +99,29 @@ def test_napari_extreme_colors() -> None:
     np.testing.assert_allclose(specific.nan_color, Color("magenta").rgba)
 
 
+@pytest.mark.filterwarnings("ignore")
+def test_napari_infinity_colors() -> None:
+    from cmap._external import _napari_colormap_param_names
+
+    ncm = Colormap(
+        ["black", "white"],
+        under=UNDER,
+        over=OVER,
+        neg_inf="magenta",
+        pos_inf="yellow",
+    ).to_napari()
+
+    if {"neg_inf_color", "pos_inf_color"} <= _napari_colormap_param_names():
+        np.testing.assert_allclose(ncm.neg_inf_color, Color("magenta").rgba)
+        np.testing.assert_allclose(ncm.pos_inf_color, Color("yellow").rgba)
+    else:
+        # napari without the fields: forwarding must be inert, not an error
+        assert not hasattr(ncm, "neg_inf_color")
+    # under/over forwarding is unaffected either way
+    np.testing.assert_allclose(ncm.low_color, Color(UNDER).rgba)
+    np.testing.assert_allclose(ncm.high_color, Color(OVER).rgba)
+
+
 @pytest.mark.skipif(
     sys.platform == "darwin" and sys.version_info >= (3, 13),
     reason="not yet working upstream",
