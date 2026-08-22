@@ -64,6 +64,13 @@ The napari side of #151 is now underway on the fork, per
   a one-line fix, independent of everything cmap is doing, and it is the natural lead for
   the napari design issue.
 
+The probe's coverage is now capped by hardware, not effort: the only machine available is
+one Apple Silicon laptop. GitHub-hosted runners can add a second Apple Silicon generation
+and an Intel Mac (the macOS legs use the real Apple graphics stack) plus llvmpipe, but no
+NVIDIA, AMD, or Intel driver, because those runners have no GPU. Vendor-driver results are
+a placeholder pending volunteers, tracked in the harness README's coverage table, and the
+Option A/B decision waits on them.
+
 One pre-existing cmap defect surfaced while testing against napari main:
 `tests/test_data.py::test_napari_name_parity` reads `_VISPY_COLORMAPS_ORIGINAL`, which
 napari has removed. It fails on unmodified `feat/exceptional-colors` too. cmap's test suite

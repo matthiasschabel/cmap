@@ -162,10 +162,29 @@ failing. Results are keyed by renderer slug so they accumulate across machines.
   one-texel NaN, against 1.0 under nearest). Classification after filtering misclassifies
   a one-texel border around every exceptional value under magnification.
 
-This moves the Option A/B decision but does not close it: Apple rules out A's mechanism
-outright, and the comparison-based classification Option B needs anyway works. NVIDIA and
-Mesa are where A is likely available and may point the other way; the harness is built to
-accumulate those results.
+This moves the Option A/B decision but does not close it, and the platforms that would
+close it are ones this project cannot reach. The available hardware is one Apple Silicon
+laptop; there is no NVIDIA, AMD, or Intel machine to run the probe on, and GitHub-hosted
+runners have no discrete GPU, so their Linux and Windows legs measure Mesa's software
+rasterizer rather than a vendor driver.
+
+What CI *can* supply, confirmed by reading napari's workflows and the headless-display
+action they use: `macos-15` and `macos-13` runners get no special setup because they run
+on the real Apple graphics stack, so they would give a second Apple Silicon generation and
+an Intel Mac respectively, both on Apple's GL implementation. Linux and Windows legs give
+llvmpipe and Mesa3D, which are still worth having as the GLSL 4.x contrast case but are
+not driver evidence. A ready but inactive workflow is committed alongside the harness;
+activating it means copying it into `.github/workflows/` on a fork and dispatching it,
+which is the owner's call.
+
+So the vendor-driver rows are a **placeholder pending outside help**, tracked in the
+coverage table in the harness README. Until one arrives, the honest position is that
+Option B is the only design demonstrated to work on hardware anyone here has measured,
+not that Option A is ruled out. The harness was hardened for that handoff: it needs only
+numpy, vispy, and a Qt binding, it records nothing about the machine beyond GL vendor,
+renderer, version, and extension count, and `--self-test` now exercises the bit-readback
+decoding against synthetic pixels, since that path cannot execute on a GLSL 1.20 platform
+and a bug in it would otherwise surface first on a volunteer's machine.
 
 
 A standalone offscreen harness, independent of napari's shader pipeline, answering the
@@ -394,7 +413,7 @@ disposition.
 
 | Topic | Position in this plan | Decision owner |
 |---|---|---|
-| Option A (bit classification) vs Option B (class texture + sanitized data) | After the Apple 4a result: A is unreachable on Apple Silicon, and the GLSL 1.20 comparison classification B needs works. Lean B, pending NVIDIA/Mesa runs | napari maintainers + owner |
+| Option A (bit classification) vs Option B (class texture + sanitized data) | After the Apple 4a result: A is unreachable on Apple Silicon, and the GLSL 1.20 comparison classification B needs works. Lean B. **Blocked on hardware nobody here has**: NVIDIA, AMD, and Intel results need volunteers or self-hosted runners, and cannot come from GitHub CI | napari maintainers + owner |
 | Volume accumulating-mode policy (exclusion vs exceptional-color priority) | Exclusion as default | napari maintainers |
 
 Recommendation after pass 1 dispositions: proceed to Stage 1 / Stage 4a implementation;
@@ -416,9 +435,12 @@ no unresolved blocking findings remain.
 2. ~~Stage 1 implementation in a napari worktree, red/green~~ — done 2026-08-22.
 3. ~~Stage 4a capability-spike harness on the owner's Apple Silicon machine~~ — done
    2026-08-22; findings in the Stage 4a section.
-4. Run the harness on NVIDIA and on Mesa/llvmpipe. Until then the Option A/B decision
-   rests on one platform.
-5. Draft the napari design issue, leading with the broken NaN test rather than with the
-   cmap semantics: it is a standalone bug with a one-line fix that any maintainer can
-   verify, and it makes the larger case concrete. Owner posts; an agent never submits.
-6. Option A/B benchmark once more platforms report, then Stage 2.
+4. Draft the napari issue for the broken NaN test. It does not wait on anything: it is a
+   live bug on hardware we have measured, the fix is one line, and it is independent of
+   the cmap semantics. Ask for the missing platform rows in the same issue, since the
+   people reading it have the hardware this project lacks and running the probe is three
+   commands. Owner posts; an agent never submits.
+5. Optionally push the draft CI workflow on the fork and dispatch it, for the two macOS
+   rows plus the llvmpipe contrast case. Owner's call: it is a push to a remote.
+6. Option A/B decision and benchmark once a vendor-driver result exists. Until then
+   Stage 2 designs against Option B and notes the assumption.
