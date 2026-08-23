@@ -404,7 +404,41 @@ subclass is a maintainer conversation, not a technical constraint.
 llvmpipe. Test vectors include true float64 infinities *and* finite float64 values just
 above FLT_MAX, asserted to render differently (per B2).
 
-### Stage 3 - masked data
+### Stage 3 - masked data  [DEFERRED 2026-08-22, by owner decision]
+
+**This is the only one of the six classes still missing.** Deferred deliberately, not
+blocked: everything else renders, and masked currently takes the NaN color, which is
+correct-looking and merely undifferentiated. Resume here.
+
+What is already true, so the next session does not re-derive it:
+
+- **cmap has it.** `masked` is a first-class class in #151, and its contract is the one
+  worth preserving: a masked entry takes that color *whatever value it hides*, so a masked
+  infinity is masked rather than infinite. The fallback is `masked -> bad -> transparent`.
+- **`mcs.visualization.SpecialColors` does not.** It carries five fields (`under`, `over`,
+  `negative_infinity`, `positive_infinity`, `bad`) and no `masked`. Adding it is the first
+  step, along with the colormap editor surfacing a sixth swatch.
+- **ImageScroller already has the mask.** `valid_mask=`/`invalid_mask=` are established
+  public API, and its docstring already anticipates this work: masked voxels "are
+  represented as NaN at the source boundary ... The boolean mask is retained separately so
+  future renderer and colormap support can provide deterministic masked-voxel coloring
+  distinct from genuine NaN, infinities, and under/over values." So the mask exists at the
+  boundary and is thrown away only for rendering.
+- **napari drops the mask during slicing.** Verified: `Image(np.ma.masked_array(...)).data`
+  *is* still a `MaskedArray`, but `layer._slice.image.view` is a plain `ndarray`. So the
+  mask survives into the layer and dies before the GPU. That slice boundary is the thing to
+  change, and it is the reason this is real work rather than a colormap field.
+- **The shader is ready for it.** The sentinel protocol now carries five classes
+  (`NAN`, `POS_INF`, `NEG_INF`, `UNDER`, `OVER`) decided before the clamp. Masked cannot be
+  a sixth sentinel, because a sentinel is derived from the value and masked is a property of
+  the *position*, not the value. It needs a sidecar: an R8 mask texture sampled nearest,
+  tested before value classification so masked wins over what it hides.
+
+Order to resume in: `SpecialColors.masked` and the editor swatch (self-contained, testable
+without any renderer change), then the napari slice boundary, then the sidecar texture and
+the shader test. The first step alone is useful, since it makes the class expressible and
+lets `to_napari` warn honestly about dropping it instead of silently conflating it with NaN.
+
 
 Scoped per review finding N3 to **eager in-memory `numpy.ma.MaskedArray` input only** in
 v1. Multiscale, lazy/dask, and thick-projection inputs carrying masks are rejected with a
@@ -555,6 +589,11 @@ no unresolved blocking findings remain.
 - Plugin-facing API for custom classification (e.g. user-defined sentinel classes).
 
 ## Next Steps
+
+0. **Resume point: masked.** Five of the six classes render end to end through
+   `mcs.visualization` into the viewer; masked takes the NaN color and is the one left.
+   See the Stage 3 section for what is already established, including the exact napari
+   slice boundary that discards the mask. Start with `SpecialColors.masked`.
 
 1. ~~Codex plan-review~~ — done 2026-08-12; dispositions above.
 2. ~~Stage 1 implementation in a napari worktree, red/green~~ — done 2026-08-22.
