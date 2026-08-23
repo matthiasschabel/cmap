@@ -279,6 +279,28 @@ hold while mid-ramp moves), clim inverted, narrow, negative, and zero-width (cla
 is clim-independent by construction), and uint8, uint16, RGB, RGBA, and CPU-scaled texture
 paths.
 
+**Codex review pass 3, 2026-08-22** (convergence check; verdict: **accept**). All six prior
+findings resolved, no new findings, no open disagreements. The reviewer also accepted the one
+position maintained against its advice: keeping `test_nan_uses_nan_color_not_the_bottom_of_the_ramp`,
+since a regression test a reader can find by the defect's name earns its place even when a
+general test covers the same behavior.
+
+One defect was found in this pass and found twice, independently. Carrying tile state across a
+rebuild read the pass-through values off the node. That is right for five of the six names,
+which are never stored on the node and resolve through `__getattr__` to the first child, and
+wrong for `opacity`, which is *also* a real `VisualNode` property: reading it from the node
+returned an untouched 1.0, so a reshape pushed 1.0 onto every new child and silently reset the
+opacity. That is the same defect the fix was written to close, moved one attribute to the left.
+Reading from the first child fixes all six. The regression test walks every name in
+`PASS_THROUGH_ATTRIBUTES` rather than only the ones that change pixels, because the render
+comparison could never have caught this one.
+
+The convergence is worth noting: three passes, each found a real defect, and the last one found
+nothing. The pattern across all three is the same shape of mistake, confirming one path and
+generalizing from it. Tiled construction was fixed without tile *replacement*; the surface path
+was cleared by reading one of its two colormap routes; five of six pass-through attributes
+behaved one way and the sixth did not.
+
 One trap worth recording for whoever runs these suites next: napari's pytest config sets
 `maxfail=5`, and `src/napari/layers/shapes` has order-dependent failures already present in
 `integration`. A run that lists paths in one order reports five failures and stops; the same
