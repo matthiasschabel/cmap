@@ -301,6 +301,25 @@ generalizing from it. Tiled construction was fixed without tile *replacement*; t
 was cleared by reading one of its two colormap routes; five of six pass-through attributes
 behaved one way and the sixth did not.
 
+**Codex review pass 4, 2026-08-22** (fresh lens: CPU model, layer integration, multiscale,
+thumbnails; verdict: revise, then clean). One new finding, already fixed before the report
+arrived.
+
+| ID | Finding | Disposition |
+|---|---|---|
+| B3 | The thumbnail clipped to the contrast limits and applied gamma *before* calling `Colormap.map`, so +inf and -inf had already become ramp endpoints and could never select their own colors. The layer-list thumbnail disagreed with the canvas | Accepted; found independently while checking the thumbnail path and fixed in `51881ee4`. Only finite values are normalized now; NaN and the infinities pass through for `map` to color. Note gamma alone would also have broken it: `(-inf) ** 0.5` is NaN |
+
+The pass confirmed no defect in the CPU mapping, serialization and registry behavior, layer
+node-switch ordering, runtime property updates, or the multiscale canvas path. Verified
+separately by hand: the 2D/3D node swap re-applies the colormap under the correct gate, and
+nothing outside `colormap.py`/`colormap_utils.py` consumes the extreme-color fields, so no
+other consumer needed updating.
+
+That is four passes, each finding a real defect, and the same shape every time: a path
+confirmed and then generalized from. The thumbnail is the clearest instance. The GPU was
+taught to classify before clamping, and the CPU path that renders the same data eight lines
+away was left clamping first.
+
 One trap worth recording for whoever runs these suites next: napari's pytest config sets
 `maxfail=5`, and `src/napari/layers/shapes` has order-dependent failures already present in
 `integration`. A run that lists paths in one order reports five failures and stops; the same
