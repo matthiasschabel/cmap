@@ -249,6 +249,21 @@ shader, not a proxy idiom, which is precisely what the isolated probe got wrong.
 correctly, against neg_inf and pos_inf collapsing onto low_color and high_color and NaN onto
 low_color before the change. 487 vispy and colormap tests green.
 
+**Codex implementation review, 2026-08-22** (gpt-5.6-sol, xhigh; verdict: revise). Both
+blocking findings were real and both are fixed.
+
+| ID | Finding | Disposition |
+|---|---|---|
+| B1 | Tiled images bypass the shader: children of `TiledImageNode` built vispy's `Image`, so an image changed appearance once it crossed the texture size limit | Accepted. Found independently before the report arrived and confirmed by rendering; children now build napari's visual, with a tiled-vs-untiled regression test |
+| B2 | The sentinel range is not unreachable: vispy's mesh visual chains the colormap after an *unclamped* `(val - cmin) / (cmax - cmin)`, so a surface vertex below the contrast limits arrives as a large negative t and gets painted with an exceptional color | Accepted. **I had checked this path and got it wrong**, finding `texture_lut()` at `mesh.py:336` and stopping before the `glsl_map` chain at `:288`. Decoding is now opt-in, set only by the image layer for non-volume nodes |
+| N1 | The NaN test is empirically, not specification, supported | Accepted as stated; it is already the README's own conclusion. Nothing to change in code, and the vendor-driver gap is tracked in the coverage table |
+| N2 | Transparent NaN is the last texel, so it reads as canvas background and shrinks the detected image region, shifting every sample | Accepted. Opaque guard texels at both ends, asserted mid-ramp, so a slipped sampling grid fails with a message that says so |
+| N3 | A crashed probe suite was summarized as UNAVAILABLE, conflating "cannot" with "did not measure" | Accepted. Crashed suites report ERROR and the full run exits non-zero |
+
+B2 also explains five labels and colormap tests that failed only in a full-suite run: the
+unconditional prologue was leaking into paths that never wanted it. The failures were
+visible before the report arrived; the report supplied the cause.
+
 **Not covered:** the volume path (own shaders, Stage 5), masked arrays (Stage 3; needs a mask
 to reach the GPU at all, which napari's data model does not yet carry), and multiscale or
 tiled paths beyond what the shared image visual covers.
