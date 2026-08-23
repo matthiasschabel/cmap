@@ -301,6 +301,26 @@ generalizing from it. Tiled construction was fixed without tile *replacement*; t
 was cleared by reading one of its two colormap routes; five of six pass-through attributes
 behaved one way and the sixth did not.
 
+**Strict endpoints: implemented, then reverted, 2026-08-22.** `low_color`/`high_color` apply
+at `values <= 0` and `>= 1` in napari, where matplotlib and cmap apply their equivalents
+strictly outside the range. That looked like the same clamp-then-classify artifact as the
+infinities, and the same fix applied: classify finite out-of-range values before the clamp,
+make `map()` strict, stop the thumbnail clipping. It worked, and it was wrong.
+
+napari's automatic contrast limits are the data's own minimum and maximum, so the extreme
+pixels of a freshly loaded image sit *exactly* on the limits. Under a strict rule the stock
+`HiLo` colormap flags nothing on precisely the images it exists for, and its table is two
+entries, black and white, with the blue and red held only in `low_color`/`high_color` -- so
+there is nowhere to bake them either. The inclusive comparison is load-bearing, not an
+artifact. Reverted in `4110e05e`; no napari behavior changed.
+
+The consequence downstream is that `mcs.visualization.to_napari` forwards `under`/`over`
+with a warning naming the difference rather than dropping them, since dropping loses the
+colors exactly where they are wanted and the inclusive reading is arguably the useful one in
+a viewer. The lesson worth keeping: the infinity divergence and the endpoint divergence look
+identical from the code and are not the same kind of thing. One was an artifact of clamping;
+the other is a deliberate accommodation of how contrast limits are chosen.
+
 **Codex review pass 4, 2026-08-22** (fresh lens: CPU model, layer integration, multiscale,
 thumbnails; verdict: revise, then clean). One new finding, already fixed before the report
 arrived.
