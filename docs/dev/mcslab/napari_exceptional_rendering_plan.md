@@ -264,6 +264,28 @@ B2 also explains five labels and colormap tests that failed only in a full-suite
 unconditional prologue was leaking into paths that never wanted it. The failures were
 visible before the report arrived; the report supplied the cause.
 
+**Codex review pass 2, 2026-08-22** (same reviewer; verdict: revise, then clean). B2, N1,
+N2, N3 confirmed resolved. B1 was maintained, correctly, and one new finding.
+
+| ID | Finding | Disposition |
+|---|---|---|
+| B1 (maintained) | The tiled fix covered construction but not replacement. Tiles are rebuilt wholesale when a data update changes the tile count, and pass-through attributes reach only the children that exist at assignment time, so a reshape reset colormap, clim, gamma, and interpolation to vispy's defaults | Accepted. Older than this work (the replacement branch is untouched by it) but it makes the tiled-matches-untiled guarantee false, so fixed: values are read before the rebuild and reapplied after. The test now configures the node and *then* changes the tile count |
+| N4 | The gate asked whether the node was *not* a volume; `ImageLayerNode` can be handed an arbitrary custom node, so an unknown node would decode sentinels it never emits | Accepted. Positive test for the image and tiled image nodes; unknown nodes fail closed onto the ordinary colormap |
+| cleanup | `_resolve_exceptional_colors` duplicated the fallback order already in `Colormap.map` | Accepted, and already applied independently before the report arrived: it now calls `map([nan, inf, -inf])`, verified identical across both interpolation modes and four colormap configurations. A render test compares GPU against CPU directly |
+| cleanup | Two tests behaviorally redundant | Partly accepted. Dropped the one asserting generated GLSL source, which pinned implementation detail. Kept the named NaN regression test: a defect stays fixed partly by having a test a reader can find by the defect's name |
+
+Also checked directly on hardware this pass, no defects found: gamma 0.5 and 2.2 (classes
+hold while mid-ramp moves), clim inverted, narrow, negative, and zero-width (classification
+is clim-independent by construction), and uint8, uint16, RGB, RGBA, and CPU-scaled texture
+paths.
+
+One trap worth recording for whoever runs these suites next: napari's pytest config sets
+`maxfail=5`, and `src/napari/layers/shapes` has order-dependent failures already present in
+`integration`. A run that lists paths in one order reports five failures and stops; the same
+tree with the paths in another order reports none. Both were reproduced on `integration`
+without any of this work applied. Do not read five failures as a signal without checking the
+ordering first.
+
 **Not covered:** the volume path (own shaders, Stage 5), masked arrays (Stage 3; needs a mask
 to reach the GPU at all, which napari's data model does not yet carry), and multiscale or
 tiled paths beyond what the shared image visual covers.
