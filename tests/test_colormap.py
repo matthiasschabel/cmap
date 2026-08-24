@@ -196,7 +196,6 @@ def test_exceptional_colors() -> None:
         neg_inf="cyan",
         pos_inf="magenta",
         nan="white",
-        masked="orange",
     )
     mask = [False] * 6 + [True] * 3
     data = np.ma.masked_array(
@@ -210,9 +209,9 @@ def test_exceptional_colors() -> None:
             Color("yellow").rgba,  # over range, finite
             Color("magenta").rgba,  # +inf
             Color("white").rgba,  # nan, not masked
-            Color("orange").rgba,  # masked wins over +inf
-            Color("orange").rgba,  # masked wins over nan
-            Color("orange").rgba,  # masked
+            Color("black").rgba,  # masked +inf -> bad
+            Color("black").rgba,  # masked nan -> bad
+            Color("black").rgba,  # masked -> bad
         ]
     )
 
@@ -234,7 +233,7 @@ def test_exceptional_colors_fall_back_to_the_legacy_extremes() -> None:
     ]
     npt.assert_array_equal(cmap(data), legacy)
 
-    # setting one leaves the other three on their legacy destinations
+    # setting one leaves the other exceptional classes on their legacy destinations
     one = cmap.with_extremes(under="green", over="yellow", bad="black", nan="white")
     npt.assert_array_equal(one(data), [*legacy[:2], Color("white").rgba, legacy[3]])
 
@@ -274,7 +273,7 @@ def test_masked_dtypes_keep_their_existing_behavior() -> None:
     npt.assert_array_equal(cmap(np.ma.masked_array(0.5, mask=True)).rgba, bad)
 
 
-@pytest.mark.parametrize("field", ["neg_inf", "pos_inf", "nan", "masked"])
+@pytest.mark.parametrize("field", ["neg_inf", "pos_inf", "nan"])
 def test_exceptional_colors_are_colormap_state(field: str) -> None:
     plain = Colormap(["red", "blue"])
     cmap = Colormap(["red", "blue"], **{field: "orange"})
