@@ -1,7 +1,7 @@
 # MCSLAB cmap integration workflow
 
 **Status:** Active
-**Last updated:** 2026-08-10
+**Last updated:** 2026-08-25
 **Scope:** the `matthiasschabel/cmap` fork and its use by `python-mcslab`
 
 ## Context
@@ -155,11 +155,9 @@ Practices that were not obvious from the plan and are worth repeating:
 
 ## Next Steps
 
-1. Five of the six PRs merged on 2026-08-10; only #150 is open. See `upstream_roadmap.md`.
-2. Keep merging into `integration` with `--no-ff` if a PR is revised during review; the merge
-   list is the manifest.
-3. Add stock/patched MCS tests when the first capability changes downstream behavior. None of
-   the six PRs does: they are defect fixes with no API surface, and MCSLAB uses its own
-   converter rather than `cmap.Colormap.to_napari()`.
+1. Keep #151 and #155 synchronized while both remain open. #155 is stacked on #151 and must be
+   rebased whenever #151 changes.
+2. Keep merging revised tips into `integration` with `--no-ff`; the merge list is the manifest.
+3. Keep the local napari forwarding branch unpushed until napari accepts the infinity fields.
 4. Retain and pin the first integration commit consumed outside the local checkout.
 5. Remove a feature worktree once its PR is merged or closed; each carries its own `.venv`.

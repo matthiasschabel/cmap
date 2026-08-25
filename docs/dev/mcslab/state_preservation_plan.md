@@ -1,9 +1,10 @@
 # Plan: preserve full Colormap state through copy and serialization
 
 **Status:** Active
-**Last updated:** 2026-08-13
+**Last updated:** 2026-08-25
 **Scope:** `src/cmap/_colormap.py`, `tests/test_colormap.py`, `tests/test_model_fields.py`
-**Baseline:** `feat/exceptional-colors` (PR #151), rebased onto `upstream/main` at `f0a4aec`
+**Baseline:** `feat/exceptional-colors` (PR #151) at `1a998df`, after removing the proposed
+mask-specific color
 
 ## Context
 
@@ -36,11 +37,11 @@ settled rather than proposed.
 
 ### One field list
 
-Add a module-level tuple and one small accessor, so the seven extreme fields are enumerated once
+Add a module-level tuple and one small accessor, so the six extreme fields are enumerated once
 outside `__init__` and `__eq__`:
 
 ```python
-_EXTREME_FIELDS = ("under", "over", "bad", "neg_inf", "pos_inf", "nan", "masked")
+_EXTREME_FIELDS = ("under", "over", "bad", "neg_inf", "pos_inf", "nan")
 
 @property
 def _extremes(self) -> dict[str, Color | None]:
@@ -59,7 +60,7 @@ Carry everything, and swap the directional pairs, because they name the ends the
 ```python
 under=self.over_color,       over=self.under_color,
 neg_inf=self.pos_inf_color,  pos_inf=self.neg_inf_color,
-bad=self.bad_color,          nan=self.nan_color,     masked=self.masked_color,
+bad=self.bad_color,          nan=self.nan_color,
 interpolation=self.interpolation,
 ```
 
@@ -171,8 +172,8 @@ state, not "full state": `info` and the serialized *shape* are outside what it p
 - **Four PRs, one per channel.** Rejected. It is one defect with four symptoms, and each PR would
   re-enumerate the same field list, get the same "did you miss a field?" review, and conflict with
   the other three in the same functions. The maintainer asked for one PR.
-- **A fifth PR extending the fix to #151's four colors.** Rejected. Its content is decided by merge
-  order and disappears under either order. Stacking on #151 covers all seven at once.
+- **A fifth PR extending the fix to #151's three colors.** Rejected. Its content is decided by
+  merge order and disappears under either order. Stacking on #151 covers all six at once.
 - **Routing `__reduce__` through a private state dict instead of `as_dict()`.** Rejected here
   because both want the same payload and `_validate` already commits `as_dict()` to being
   constructor-shaped; a second near-identical dict builder is the duplication this change exists to
@@ -184,13 +185,13 @@ state, not "full state": `info` and the serialized *shape* are outside what it p
 
 Red first, per the practice recorded in `integration_workflow.md`.
 
-1. `reversed()` round trip: a colormap with all seven set plus `interpolation="nearest"` reverses
+1. `reversed()` round trip: a colormap with all six set plus `interpolation="nearest"` reverses
    with the two directional pairs swapped and the rest intact.
 2. `Colormap("napari:HiLo_r")` equals `Colormap("napari:HiLo").reversed()`, and
    `Colormap("napari:HiLo_r", under="green")` keeps green on `under`, so the swap does not reach
    an explicit override.
 3. `with_extremes()` preserves what is not passed and keeps an explicit `identifier`.
-4. `pickle.loads(pickle.dumps(cm)) == cm` for a colormap with all seven set, and the name,
+4. `pickle.loads(pickle.dumps(cm)) == cm` for a colormap with all six set, and the name,
    category, and interpolation survive. Separately, a callable-backed colormap
    (`cmap_kwargs`-parametrized cubehelix) survives pickle, `copy`, and `deepcopy` with
    `lut(17, gamma=2)` bit-identical, which is the B1 regression guard.
@@ -231,6 +232,6 @@ No open disagreements. Reviewer: Codex, gpt-5.6-sol at xhigh effort, both passes
 
 ## Next Steps
 
-1. Implementation on `fix/state-preservation`, then codex implementation review.
-2. Draft PR declaring "Depends on #151". #151 itself needs a force-push after the rebase, which
-   needs the owner's authorization.
+1. Keep PR #155 stacked on #151 while both remain open.
+2. If #151 changes again, rebase #155 and rerun the focused serialization and transformation
+   tests before updating the remote branch.

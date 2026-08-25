@@ -1,5 +1,12 @@
 # Draft reply to tlambert03 on PR #151 (comment 5266155726)
 
+**Status:** Superseded
+**Last updated:** 2026-08-25
+**Scope:** historical draft for PR #151 before the mask-specific field was removed
+
+The owner posted a revised response during review, then removed the proposed `masked` field in
+commit `1a998df`. The mask-specific argument below is retained only as review history.
+
 Drafted 2026-08-12 for the owner to edit and post. Answers the maintainer's five questions;
 policies settled by the owner the same day. Findings verified empirically against `main` and
 against matplotlib 3.11.1; see `upstream_roadmap.md` items 6 to 8.

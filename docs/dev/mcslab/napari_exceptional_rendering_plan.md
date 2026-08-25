@@ -1,7 +1,7 @@
 # napari support for cmap #151 exceptional-value semantics: staged plan
 
 **Status:** Active
-**Last updated:** 2026-08-22 (second pass: Stage 2 image path)
+**Last updated:** 2026-08-25
 **Scope:** cmap -> napari -> vispy rendering stack; CPU and GPU paths
 **Review:** Codex plan-review pass 1 (gpt-5.6-sol, xhigh) 2026-08-12; dispositions recorded
 below. All four blocking findings accepted or revised into this version.
@@ -12,7 +12,7 @@ cmap PR #151 defines per-class colors with a fallback hierarchy:
 
 | Input class | Resolution order |
 |---|---|
-| masked | `masked -> bad -> transparent` |
+| masked | `bad -> transparent` |
 | unmasked NaN | `nan -> bad -> transparent` |
 | negative infinity | `neg_inf -> under -> first ramp color` |
 | positive infinity | `pos_inf -> over -> last ramp color` |
@@ -116,8 +116,8 @@ Extend napari's `Colormap` model with `neg_inf_color` and `pos_inf_color` (defau
 -> fall back to `low_color`/`high_color` exactly as cmap falls back to under/over), and
 apply the full resolution order in `Colormap.map()`. Extend `cmap.to_napari()` to forward
 the new fields when the installed napari accepts them (same feature-detection pattern
-`_napari_colormap_param_names()` already uses). `masked_color` is deferred to Stage 3
-because napari has no mask in its data model yet.
+`_napari_colormap_param_names()` already uses). Mask-specific rendering is deferred to Stage 3;
+cmap #151 no longer proposes a `masked_color`, and napari has no mask in its data model yet.
 
 Everything CPU-mapped (thumbnails, points/vectors/surface layers, any CPU fallback)
 becomes correct for NaN and both infinities with no GPU work at all.
@@ -426,15 +426,14 @@ above FLT_MAX, asserted to render differently (per B2).
 
 ### Stage 3 - masked data  [DEFERRED 2026-08-22, by owner decision]
 
-**This is the only one of the six classes still missing.** Deferred deliberately, not
-blocked: everything else renders, and masked currently takes the NaN color, which is
-correct-looking and merely undifferentiated. Resume here.
+**A mask-specific distinction is the only desired class still missing.** Deferred deliberately,
+not blocked: everything else renders, and masked currently takes `bad`, which is correct-looking
+and merely undifferentiated. This is now a downstream rendering policy rather than part of #151.
 
 What is already true, so the next session does not re-derive it:
 
-- **cmap has it.** `masked` is a first-class class in #151, and its contract is the one
-  worth preserving: a masked entry takes that color *whatever value it hides*, so a masked
-  infinity is masked rather than infinite. The fallback is `masked -> bad -> transparent`.
+- **cmap intentionally does not have it.** The mask-specific field was removed from #151 after
+  API review. cmap continues to route a masked entry to `bad` whatever value it hides.
 - **`mcs.visualization.SpecialColors` does not.** It carries five fields (`under`, `over`,
   `negative_infinity`, `positive_infinity`, `bad`) and no `masked`. Adding it is the first
   step, along with the colormap editor surfacing a sixth swatch.
@@ -468,7 +467,8 @@ replaced by that explicit error for masked input on unsupported paths.
 
 - Image layer accepts eager `numpy.ma.MaskedArray`; the mask is split off at the layer
   boundary (the same pre-`fix_data_dtype` hook as the Stage 2 scan).
-- CPU path: already correct via cmap semantics.
+- CPU path: cmap correctly routes masks to `bad`; a distinct mask color would require downstream
+  handling before cmap mapping.
 - GPU path: under Option B the mask is a fifth class-texture value; under Option A it is
   its own R8 texture sampled nearest, checked before value classification (masked wins
   over the value it hides, matching cmap). Allocated only when a mask exists.
@@ -610,10 +610,10 @@ no unresolved blocking findings remain.
 
 ## Next Steps
 
-0. **Resume point: masked.** Five of the six classes render end to end through
-   `mcs.visualization` into the viewer; masked takes the NaN color and is the one left.
-   See the Stage 3 section for what is already established, including the exact napari
-   slice boundary that discards the mask. Start with `SpecialColors.masked`.
+0. **Resume point: upstream review.** Five of the six classes render end to end through
+   `mcs.visualization` into the viewer. Mask-specific rendering remains deferred by owner
+   decision; if resumed, start from `SpecialColors.masked` and the Stage 3 analysis of the
+   napari slice boundary that discards the mask.
 
 1. ~~Codex plan-review~~ — done 2026-08-12; dispositions above.
 2. ~~Stage 1 implementation in a napari worktree, red/green~~ — done 2026-08-22.

@@ -1,5 +1,5 @@
-Follow-up to the four preservation questions on #151. Depends on #151: the first commit here is
-that PR's, and the diff shrinks to the second commit alone once it lands.
+Follow-up to the four preservation questions on #151. Depends on #151: the base commits here are
+that PR's, and the diff shrinks to the preservation commit alone once it lands.
 
 None of the four channels preserved the extreme colors, and two of them dropped the interpolation
 mode as well. Verified on `main` before this change:

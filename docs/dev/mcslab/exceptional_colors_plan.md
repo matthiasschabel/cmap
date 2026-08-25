@@ -1,9 +1,16 @@
 # Plan: additive exceptional-value colors for cmap issue #144
 
-**Status:** Approved for implementation (revision 4)
-**Last updated:** 2026-08-10
+**Status:** Superseded
+**Last updated:** 2026-08-25
 **Scope:** `src/cmap/_colormap.py`, `src/cmap/_external.py`, `tests/test_colormap.py`, `docs/`
 **Baseline:** `fix/interpolation-aliasing` (PR #150), which is two commits above `upstream/main`
+
+## Current Outcome
+
+The infinity and NaN portions were implemented, but the proposed mask-specific color was removed
+from PR #151 in commit `1a998df` after API review. The current contract is recorded in
+`upstream_roadmap.md`. The mask-specific sections below preserve the rejected revision 4 design
+and must not be treated as an implementation plan.
 
 ## Goal
 

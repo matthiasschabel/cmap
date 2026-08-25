@@ -1,7 +1,7 @@
 # Multivariate colormaps in cmap
 
 **Status:** Active
-**Last updated:** 2026-08-16
+**Last updated:** 2026-08-25
 **Scope:** `cmap` upstream, issue [#90](https://github.com/pyapp-kit/cmap/issues/90); survey of prior art and a proposed integration
 
 ## Recommendation up front
@@ -366,7 +366,7 @@ the VSUP brightness confound) is as valuable as the palette data itself.
 7. **`_repr_png_` already accepts an `img` argument** and `_png.py` encodes an arbitrary RGB(A)
    array. The 2-D swatch is nearly free.
 8. **Out-of-range handling is cmap's strongest existing feature** and is about to get stronger:
-   `under`, `over`, `bad`, `neg_inf`, `pos_inf`, `nan`, `masked` (PRs #151/#155). matplotlib's
+   `under`, `over`, `bad`, `neg_inf`, `pos_inf`, and `nan` (PRs #151/#155). matplotlib's
    bivariate class has only `bad` and `outside`.
 9. **Only matplotlib ≥3.10 is a viable `to_*` target.** vispy, pygfx, napari, bokeh, plotly,
    altair have no bivariate colormap type. Keep the converter surface tiny.
@@ -441,11 +441,11 @@ outside: ColorLike | None = None               # None => clip to the domain boun
 That is four states from two orthogonal arguments, it matches the way cmap already spells
 out-of-range behavior for 1-D (`under_color=None` means "use the first color"), and it extends to
 a third geometry without a combinatorial explosion of string values. Adding `outside` alongside
-the existing `bad`/`nan`/`masked` machinery reuses `_with_exceptional_colors` rather than
+the existing `bad`/`nan` machinery reuses `_with_exceptional_colors` rather than
 duplicating it.
 
 Note that `under`/`over` do **not** generalize: in 2-D there is no single "below." A single
-`outside` color, plus `bad`/`nan`/`masked` inherited unchanged, is the right vocabulary.
+`outside` color, plus `bad`/`nan` inherited unchanged, is the right vocabulary.
 
 ### 4.5 Catalog schema
 

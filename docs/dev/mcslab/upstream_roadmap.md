@@ -1,7 +1,7 @@
 # MCSLAB cmap upstream roadmap
 
 **Status:** Active
-**Last updated:** 2026-08-13
+**Last updated:** 2026-08-25
 **Scope:** small upstream cmap contributions that allow MCSLAB to reduce its colormap layer
 
 ## Where this stands
@@ -18,9 +18,9 @@ against this project land.
 | #148 | unmasked NaNs lost in a masked array | merged |
 | #149 | exceptional-value documentation | merged; was stacked on #148 |
 | #150 | interpolation rewritten on borrowed stops, and dropped by `with_extremes()` | merged as `f0a4aec` |
-| #151 | per-class colors for `neg_inf`, `pos_inf`, `nan`, `masked` (#144) | **open**, ready; maintainer approved 2026-08-13 pending @jni's read of the API |
+| #151 | per-class colors for `neg_inf`, `pos_inf`, and `nan` (#144) | **open**; mask-specific color removed after API review |
 | #152 | non-native byte order reinterpreted instead of byteswapped | merged as `d1521b1` |
-| #155 | state lost by `reversed()`, `with_extremes()`, pickle, and `as_dict()` | **open**, draft; stacked on #151 |
+| #155 | state lost by `reversed()`, `with_extremes()`, pickle, and `as_dict()` | **open**; stacked on #151 |
 
 #150 and #152 merging left #151 conflicting, so `feat/exceptional-colors` was rebased onto
 `upstream/main` on 2026-08-13. The conflict was the predicted one, two lines apart in `__call__`:
@@ -28,9 +28,15 @@ keep the byteswap line and #151's mask block. Pre-rebase SHA `0587c892`, post-re
 Force-pushed the same day with the owner's authorization; #151 now reports mergeable and its diff
 is the one feature commit alone, since #150's two commits are no longer riding along.
 
-#155 is cut from the rebased #151, so it carries the same resolution. Its plan, dispositions from
-two codex review passes, and PR body are in `state_preservation_plan.md` and
-`state_preservation_pr_body.md`.
+#151 was narrowed again on 2026-08-24 after review questioned whether a mask-specific rendering
+policy belongs in this foundational library. Commit `1a998df` removes the `masked` constructor
+field and property while retaining the existing behavior in which masked entries use `bad`.
+
+#155 and the held napari forwarding branch were rebased onto that revised tip on 2026-08-25.
+#155 now preserves the six supported extreme fields at `313a7d9`; the forwarding branch remains
+a two-file, 28-line increment at `b62c52f`. Their plans and PR material are in
+`state_preservation_plan.md`, `state_preservation_pr_body.md`, and
+`napari_exceptional_rendering_plan.md`.
 
 `integration` was updated in the same pass: merging `fix/state-preservation` brought
 `upstream/main` into the history for the first time since the five-PR landing, and one conflict
@@ -56,7 +62,7 @@ The napari side of #151 is now underway on the fork, per
   `feat/exceptional-colors`, merged into `integration`): five lines in `to_napari()` behind
   the existing `_napari_colormap_param_names()` detection, so it stays inert on napari
   versions without the fields. **Held**: no PR until napari accepts them, and it must be
-  rebased if #151 moves again.
+  rebased if #151 moves again. Rebased onto #151 at `1a998df` on 2026-08-25.
 - **napari Stage 4a** (`dev/gl-exceptional-probe`): a GL capability probe in the fork's
   `docs/dev/exceptional_rendering/`. Its Apple M5 result found that vispy's own NaN test
   is folded away by Metal's fast math, so **NaN currently renders as the bottom of the
@@ -86,15 +92,11 @@ edits during merge. Their branches and worktrees are gone locally, and the two b
 deleted from the fork with the owner's authorization. `origin/main` was fast-forwarded to
 `f0a4aec` so future branches cut from the fork's default start from the right base.
 
-What remains is exactly the two open PRs. `feat/exceptional-colors` and `fix/state-preservation`
-are the only local branches besides `main` and `integration`, each with a worktree, each tracking
-its fork branch, and each matching its PR head SHA (`9380611`, `4302481`; both report mergeable).
-
-`integration` is `upstream/main` plus those two branches plus this `docs/dev/mcslab/` tree and
-the `mkdocs.yml` exclusion. Checked, not assumed: `upstream/main` and both open branches are
-ancestors of it, and diffing `integration` against `fix/state-preservation` over `src`, `tests`,
-`docs`, and `mkdocs.yml` yields the eleven mcslab notes and the four `mkdocs.yml` lines, nothing
-else. No code has drifted onto `integration` that is not in a PR.
+The two open PR branches, `feat/exceptional-colors` and `fix/state-preservation`, retain their
+worktrees and track fork branches. The held local `feat/napari-inf-color-forwarding` branch has a
+third worktree but no remote branch. `integration` contains the revised tips of all three plus this
+`docs/dev/mcslab/` tree and the `mkdocs.yml` exclusion; revised tips are merged rather than
+rewriting the integration manifest.
 
 ## Context
 
@@ -161,21 +163,20 @@ Owner-settled policy, 2026-08-12 (reply draft in `exceptional_colors_maintainer_
 not yet posted):
 
 - `reversed()` swaps the directional pairs (`under`/`over`, `neg_inf`/`pos_inf`), preserves
-  `bad`/`nan`/`masked` and interpolation. Cite matplotlib.
+  `bad`/`nan` and interpolation. Cite matplotlib.
 - `with_extremes()` preserves anything not passed, citing matplotlib; clearing one color
   means constructing a fresh Colormap, the same limitation matplotlib has.
 - `__reduce__` carries full constructor state.
-- `as_dict()` gains optional keys (interpolation plus the seven extreme colors) emitted only
+- `as_dict()` gains optional keys (interpolation plus the six extreme colors) emitted only
   when set, so existing payloads are unchanged; the pydantic serializer falls back to dict
   form when a catalog colormap carries extremes. `_validate` already accepts the keys.
-- `bad` stays: it is the umbrella tier parallel to under/over above neg_inf/pos_inf, and
-  `masked` is the only class that can mark in-range values (predicate masking as a cheap
-  contour or polarity overlay).
+- `bad` stays as the umbrella invalid-value color. The proposed mask-specific child was removed
+  from #151 after review; predicate-mask rendering remains downstream policy.
 
 The maintainer answered on 2026-08-13: "I suppose we should go ahead and split that fix out into
 a new PR. And it needn't hold this one up either." Singular PR, and no dependency in the other
 direction. Items 6, 7, and 8 are therefore **one** PR, #155, and there is no fifth PR extending
-the fix to #151's four colors: #155 is stacked on #151 and covers all seven at once.
+the fix to #151's three colors: #155 is stacked on #151 and covers all six at once.
 
 The `identifier` question is settled in #155 rather than asked: identifier travels with the
 name, so `reversed()` and `shifted()` let it re-derive and `with_extremes()` preserves it. The
@@ -194,8 +195,8 @@ changes, which answers the question the hold existed for. Items 11 and 12 stay i
 quarantine for now.
 
 9 and 10 were merged into one change and **implemented** on 2026-08-10, on
-`feat/exceptional-colors`, stacked on #150. `neg_inf`, `pos_inf`, `nan`, and `masked`, each
-falling back to the color its class uses today. No shared `inf` parent: the owner decided
+`feat/exceptional-colors`, stacked on #150. The final review scope is `neg_inf`, `pos_inf`, and
+`nan`, each falling back to the color its class uses today. No shared `inf` parent: the owner decided
 against it, since `pos_inf=c, neg_inf=c` already expresses the union. Design, dispositions,
 and the two Codex review passes are in `exceptional_colors_plan.md`; the PR body is in
 `exceptional_colors_pr_body.md`. Pushed to the fork and opened as draft #151 on 2026-08-10
@@ -217,10 +218,10 @@ The compatible proposed resolution is:
 
 | Input class | Resolution order |
 |---|---|
-| masked | `masked -> bad -> transparent` |
+| masked | `bad -> transparent` |
 | unmasked NaN | `nan -> bad -> transparent` |
-| negative infinity | `neg_inf -> inf -> under -> first ramp color` |
-| positive infinity | `pos_inf -> inf -> over -> last ramp color` |
+| negative infinity | `neg_inf -> under -> first ramp color` |
+| positive infinity | `pos_inf -> over -> last ramp color` |
 
 Constructor arguments use cmap's unsuffixed convention; properties use `_color`. Every field uses
 the existing `ColorLike` parser, including RGBA tuples.
@@ -256,7 +257,7 @@ keeps application policy downstream.
   migration in #60 (`de1fbe2`), which dropped the `.byteswap()` when `ndarray.newbyteorder()`
   was removed. Codex accepted it with no blocking findings. Merging it into `integration`
   conflicted with #151 exactly where predicted, two lines apart in `__call__`; keep the
-  byteswap line and #151's mask block. With both merged, exceptional colors now resolve
+  byteswap line and #151's exceptional-routing block. With both merged, exceptional colors now resolve
   correctly for non-native input, which is the outcome the #151 plan deferred to this fix.
 - `cmap(scalar, bytes=True)` raises `ValueError`, because `parse_rgba` accepts a 3-element
   integer array but not a 4-element one. Filed as issue #153 on 2026-08-10, not a PR: the
@@ -281,16 +282,19 @@ keeps application policy downstream.
   fixed (#147, #150); nothing has decided whether the constructor should copy in general. Doing
   so would change the memory profile of every catalog construction, so it needs a measurement,
   not an opinion.
-- Each worktree carries its own `.venv` and costs about 1.1 GB. Only `exceptional-colors` and
-  `state-preservation` remain; remove each as its PR closes.
+- Each worktree carries its own `.venv` and costs about 1.1 GB. Keep the two open-PR worktrees
+  until their PRs close. The held napari forwarding worktree may be removed for space while
+  retaining its local branch, but leaving it in place avoids recreating it during active work.
 
 ## Next Steps
 
-1. Mark #155 ready for review once #151 draws @jni's response, so the two do not arrive together.
+1. Keep #155 synchronized with #151 while both remain open; update its remote branch and PR body
+   after each #151 scope change.
 2. Build the signed-infinity work (item 9) behind the MCS compatibility layer, where it does not
    wait on review.
-3. Raise the MCS cmap floor and delete the corresponding fallbacks once the seven merged fixes
+3. Raise the MCS cmap floor and delete the corresponding fallbacks once the merged fixes
    ship in a release. They are in `main` but unreleased; the current floor is `cmap>=0.7`.
-4. Rebase `feat/napari-inf-color-forwarding` if #151 moves again; it is stacked on it.
+4. Keep `feat/napari-inf-color-forwarding` local until napari accepts the corresponding fields;
+   rebase it again if #151 moves.
 5. Consider a standalone cmap PR for the `_VISPY_COLORMAPS_ORIGINAL` breakage against
    napari main, independent of the exceptional-color queue.
