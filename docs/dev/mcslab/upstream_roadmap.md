@@ -41,7 +41,9 @@ a two-file, 28-line increment at `b62c52f`. Their plans and PR material are in
 Verification after merging all three revised tips into `integration`: 264 passed, 1 skipped,
 1 xfailed under `THIRD=1 CI=1 pytest` with `pydantic-compat`; ruff passed. The state branch's
 focused copy/serialization surface passed 52 tests, and the held napari branch's two forwarding
-tests passed against released napari with forwarding correctly inert.
+tests passed against released napari with forwarding correctly inert. The refreshed #155 CI
+matrix reaches the same branch code but is red where dependency resolution selects napari 0.9;
+every failed leg stops in the pre-existing name-parity test described below, outside #155's diff.
 
 `integration` was updated in the same pass: merging `fix/state-preservation` brought
 `upstream/main` into the history for the first time since the five-PR landing, and one conflict
@@ -82,11 +84,12 @@ NVIDIA, AMD, or Intel driver, because those runners have no GPU. Vendor-driver r
 a placeholder pending volunteers, tracked in the harness README's coverage table, and the
 Option A/B decision waits on them.
 
-One pre-existing cmap defect surfaced while testing against napari main:
+One pre-existing cmap defect surfaced while testing against napari main and now affects CI jobs
+that resolve napari 0.9:
 `tests/test_data.py::test_napari_name_parity` reads `_VISPY_COLORMAPS_ORIGINAL`, which
-napari has removed. It fails on unmodified `feat/exceptional-colors` too. cmap's test suite
-will break when napari 0.9 releases. Candidate for a small standalone PR, unrelated to the
-current queue.
+napari removed. It fails on unmodified `feat/exceptional-colors` too, and accounts for every
+failed test job on #155 after its 2026-08-25 rebase. Candidate for a small standalone PR;
+do not fold it into the exceptional-color queue.
 
 ### Reconciled with upstream, 2026-08-13
 
@@ -301,5 +304,5 @@ keeps application policy downstream.
    ship in a release. They are in `main` but unreleased; the current floor is `cmap>=0.7`.
 4. Keep `feat/napari-inf-color-forwarding` local until napari accepts the corresponding fields;
    rebase it again if #151 moves.
-5. Consider a standalone cmap PR for the `_VISPY_COLORMAPS_ORIGINAL` breakage against
-   napari main, independent of the exceptional-color queue.
+5. Prepare a standalone cmap PR for the `_VISPY_COLORMAPS_ORIGINAL` breakage under napari 0.9,
+   independent of the exceptional-color queue.
