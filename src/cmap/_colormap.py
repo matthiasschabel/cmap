@@ -60,12 +60,11 @@ if TYPE_CHECKING:
         neg_inf: list[float]
         pos_inf: list[float]
         nan: list[float]
-        masked: list[float]
 
 
 # the extreme colors, in constructor-argument spelling; `<field>_color` is the property.
 # Copy and serialization paths iterate this rather than repeating the list.
-_EXTREME_FIELDS = ("under", "over", "bad", "neg_inf", "pos_inf", "nan", "masked")
+_EXTREME_FIELDS = ("under", "over", "bad", "neg_inf", "pos_inf", "nan")
 
 LutCallable: TypeAlias = Callable[["NDArray"], "NDArray"]
 """Function type for a callable that takes an array of values in the range [0, 1] and returns an (N, 4) array of RGBA values in the range [0, 1]."""  # noqa
@@ -165,10 +164,6 @@ class Colormap:
         `over`.
     nan : ColorLike | None
         The color to use for NaN.  When unset, NaN uses `bad`.
-    masked : ColorLike | None
-        The color to use for entries masked by a `numpy.ma` masked array.  When unset,
-        masked entries use `bad`.  A masked entry takes this color whatever value it
-        hides, so a masked infinity is masked rather than infinite.
 
     Raises
     ------
@@ -190,7 +185,6 @@ class Colormap:
         "identifier",
         "info",
         "interpolation",
-        "masked_color",
         "name",
         "nan_color",
         "neg_inf_color",
@@ -258,8 +252,7 @@ class Colormap:
     If provided, and `Colormap.lut` is called with `with_over_under=True`, `bad_color`
     will be the last color in the LUT (`lut[-1]`).
 
-    `nan_color` and `masked_color` override it for their own class.  It remains the
-    color both of them fall back to.
+    `nan_color` overrides it for NaN.  Masked values continue to use `bad_color`.
     """
 
     neg_inf_color: Color | None
@@ -270,12 +263,6 @@ class Colormap:
 
     nan_color: Color | None
     """A color to use for NaN, overriding `bad_color`."""
-
-    masked_color: Color | None
-    """A color to use for masked entries, overriding `bad_color`.
-
-    Applies to any entry masked by a `numpy.ma` masked array, whatever value it hides.
-    """
 
     _catalog_instance: Catalog | None = None
 
@@ -300,7 +287,6 @@ class Colormap:
         neg_inf: ColorLike | None = None,
         pos_inf: ColorLike | None = None,
         nan: ColorLike | None = None,
-        masked: ColorLike | None = None,
         cmap_kwargs: dict[str, Any] | None = None,
     ) -> None:
         self.info: CatalogItem | None = None
@@ -382,7 +368,6 @@ class Colormap:
         self.neg_inf_color = None if neg_inf is None else Color(neg_inf)
         self.pos_inf_color = None if pos_inf is None else Color(pos_inf)
         self.nan_color = None if nan is None else Color(nan)
-        self.masked_color = None if masked is None else Color(masked)
         # a colormap with none of these takes the same path it did before they existed
         self._has_exceptional = any(
             c is not None
@@ -390,7 +375,6 @@ class Colormap:
                 self.neg_inf_color,
                 self.pos_inf_color,
                 self.nan_color,
-                self.masked_color,
             )
         )
 
@@ -440,10 +424,9 @@ class Colormap:
           colormap), and values above 1 use `over_color` (when unset, the last).
         - negative and positive infinity use `neg_inf_color` and `pos_inf_color`
           (when unset, `under_color` and `over_color`).
-        - NaN uses `nan_color`, and entries masked by a `numpy.ma` masked array use
-          `masked_color` (when either is unset, `bad_color`, which is itself
-          transparent when unset).  A masked entry takes the masked color whatever
-          value it hides.
+        - NaN uses `nan_color` (when unset, `bad_color`, which is itself transparent
+          when unset).  Entries masked by a `numpy.ma` masked array use `bad_color`,
+          whatever value they hide.
 
         For integer input, which indexes the LUT directly, an index at or beyond N
         uses `over_color`, and a negative index uses `under_color` rather than
@@ -529,18 +512,18 @@ class Colormap:
         xa[mask_over] = N + 1
         xa[mask_bad] = N + 2
         if self._has_exceptional:
-            # last wins: a masked entry is masked whatever value it hides
             if is_float:
                 xa[mask_neg_inf] = N + 3
                 xa[mask_pos_inf] = N + 4
             xa[mask_nan] = N + 5
-            xa[mask_masked] = N + 6
+            # A masked entry remains bad whatever value it hides.
+            xa[mask_masked] = N + 2
 
         rgba = lut.take(xa, axis=0, mode="clip")
         return rgba if np.iterable(x) else Color(rgba)
 
     def _with_exceptional_colors(self, lut: np.ndarray) -> np.ndarray:
-        """Return `lut` with four rows appended, one per exceptional value class.
+        """Return `lut` with three rows appended, one per exceptional value class.
 
         Each appended row falls back to the row its class would otherwise have used,
         so routing a class to its own row cannot change any color while that class
@@ -553,7 +536,6 @@ class Colormap:
                 under if self.neg_inf_color is None else self.neg_inf_color.rgba,
                 over if self.pos_inf_color is None else self.pos_inf_color.rgba,
                 bad if self.nan_color is None else self.nan_color.rgba,
-                bad if self.masked_color is None else self.masked_color.rgba,
             )
         )
 
@@ -566,7 +548,6 @@ class Colormap:
         neg_inf: ColorLike | None = None,
         pos_inf: ColorLike | None = None,
         nan: ColorLike | None = None,
-        masked: ColorLike | None = None,
     ) -> Colormap:
         """Return a copy of the colormap with new extreme values.
 
@@ -585,7 +566,6 @@ class Colormap:
             neg_inf=self.neg_inf_color if neg_inf is None else neg_inf,
             pos_inf=self.pos_inf_color if pos_inf is None else pos_inf,
             nan=self.nan_color if nan is None else nan,
-            masked=self.masked_color if masked is None else masked,
         )
 
     @property
@@ -731,7 +711,6 @@ class Colormap:
             pos_inf=self.neg_inf_color,
             bad=self.bad_color,
             nan=self.nan_color,
-            masked=self.masked_color,
         )
 
     def shifted(
@@ -778,7 +757,6 @@ class Colormap:
             neg_inf=self.neg_inf_color,
             pos_inf=self.pos_inf_color,
             nan=self.nan_color,
-            masked=self.masked_color,
         )
 
     def to_css(
@@ -848,7 +826,6 @@ class Colormap:
             and self.neg_inf_color == other.neg_inf_color
             and self.pos_inf_color == other.pos_inf_color
             and self.nan_color == other.nan_color
-            and self.masked_color == other.masked_color
             and self.interpolation == other.interpolation
         )
 
@@ -902,7 +879,6 @@ class Colormap:
                 ("neg_inf", self.neg_inf_color),
                 ("pos_inf", self.pos_inf_color),
                 ("nan", self.nan_color),
-                ("masked", self.masked_color),
             )
             swatches = " ".join(
                 f"{name} {_html_color_patch(c)}" for name, c in patches if c is not None

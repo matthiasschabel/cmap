@@ -121,7 +121,7 @@ def test_psygnal_serialization_of_a_configured_colormap() -> None:
     class MyModel(psygnal.EventedModel):  # type: ignore
         colormap: Colormap
 
-    cmap = Colormap(["r", "b"], interpolation="nearest", under="green", masked="orange")
+    cmap = Colormap(["r", "b"], interpolation="nearest", under="green", nan="orange")
     obj = MyModel(colormap=cmap)
 
     data = obj.model_dump_json() if V2 else obj.json()
