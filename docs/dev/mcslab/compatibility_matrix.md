@@ -55,11 +55,9 @@ Tests should state capability behavior rather than assume a particular version:
 
 ## Deferred Work
 
-- Record the retained integration commit and exact test counts after the first feature merge.
-  The 242 passed / 2 skipped / 1 xfailed figure recorded on 2026-08-09 under
-  `THIRD=1 uv run --no-dev --group test_thirdparty pytest` is stale: upstream has since added
-  the crameri and cmocean data-parity tests, so re-measure before quoting it. There is still no
-  capability to pin a commit *for*, so pinning waits.
+- Record a retained integration commit when downstream consumes it. The current local integration
+  result is 264 passed, 1 skipped, and 1 xfailed under `THIRD=1 CI=1 pytest` with
+  `pydantic-compat`; pinning still waits for a downstream consumer.
 - Add the concrete probe location once the public spelling of signed infinity fields is accepted.
 - Decide whether separate NaN and mask colors belong in MCS; they are not required by its current
   API.

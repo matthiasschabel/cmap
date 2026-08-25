@@ -38,6 +38,11 @@ a two-file, 28-line increment at `b62c52f`. Their plans and PR material are in
 `state_preservation_plan.md`, `state_preservation_pr_body.md`, and
 `napari_exceptional_rendering_plan.md`.
 
+Verification after merging all three revised tips into `integration`: 264 passed, 1 skipped,
+1 xfailed under `THIRD=1 CI=1 pytest` with `pydantic-compat`; ruff passed. The state branch's
+focused copy/serialization surface passed 52 tests, and the held napari branch's two forwarding
+tests passed against released napari with forwarding correctly inert.
+
 `integration` was updated in the same pass: merging `fix/state-preservation` brought
 `upstream/main` into the history for the first time since the five-PR landing, and one conflict
 in `with_extremes()` where integration still held the old clearing behavior. Resolved to the
