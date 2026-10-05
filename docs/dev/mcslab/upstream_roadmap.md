@@ -1,7 +1,7 @@
 # MCSLAB cmap upstream roadmap
 
 **Status:** Active
-**Last updated:** 2026-08-25
+**Last updated:** 2026-10-05
 **Scope:** small upstream cmap contributions that allow MCSLAB to reduce its colormap layer
 
 ## Where this stands
@@ -88,8 +88,8 @@ One pre-existing cmap defect surfaced while testing against napari main and now 
 that resolve napari 0.9:
 `tests/test_data.py::test_napari_name_parity` reads `_VISPY_COLORMAPS_ORIGINAL`, which
 napari removed. It fails on unmodified `feat/exceptional-colors` too, and accounts for every
-failed test job on #155 after its 2026-08-25 rebase. Candidate for a small standalone PR;
-do not fold it into the exceptional-color queue.
+failed test job on #155 after its 2026-08-25 rebase. Fixed standalone in #160;
+not folded into the exceptional-color queue.
 
 ### Reconciled with upstream, 2026-08-13
 
@@ -304,5 +304,7 @@ keeps application policy downstream.
    ship in a release. They are in `main` but unreleased; the current floor is `cmap>=0.7`.
 4. Keep `feat/napari-inf-color-forwarding` local until napari accepts the corresponding fields;
    rebase it again if #151 moves.
-5. Prepare a standalone cmap PR for the `_VISPY_COLORMAPS_ORIGINAL` breakage under napari 0.9,
-   independent of the exceptional-color queue.
+5. The napari 0.9 name-parity breakage is in draft PR #160 (branch
+   `test/napari-09-name-parity`, test-only). napari 0.9 also dropped
+   `_MATPLOTLIB_COLORMAP_NAMES`; the fix reads the public `matplotlib_colormaps` instead.
+   Rebase open PRs whose CI is red only from this once it lands.
