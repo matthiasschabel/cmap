@@ -87,8 +87,9 @@ The probe's coverage is now capped by hardware, not effort: the only machine ava
 one Apple Silicon laptop. GitHub-hosted runners can add a second Apple Silicon generation
 and an Intel Mac (the macOS legs use the real Apple graphics stack) plus llvmpipe, but no
 NVIDIA, AMD, or Intel driver, because those runners have no GPU. Vendor-driver results are
-a placeholder pending volunteers, tracked in the harness README's coverage table, and the
-Option A/B decision waits on them.
+a placeholder pending volunteers, tracked in the harness README's coverage table. (Superseded
+2026-10-08: the integrated plan drops the Option A/B decision; see
+`napari_exceptional_rendering_plan.md`, "Current Decision".)
 
 One pre-existing cmap defect surfaced while testing against napari main and now affects CI jobs
 that resolve napari 0.9:
