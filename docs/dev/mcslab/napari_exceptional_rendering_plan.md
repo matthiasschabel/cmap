@@ -279,7 +279,7 @@ How existing work maps onto this:
 | napari#9561 (stopgap NaN fix) | closed by U6 |
 | napari fork `colormap-inf-colors` (Stage 1) | U7 |
 | cmap `feat/napari-inf-color-forwarding` | U7 (cmap half) |
-| napari fork `gpu-exceptional-colors` (Stage 2) | prototype; superseded by U8a-c + U9; source of G1's probe and of the tiled-image fixes, which are separate napari defects worth their own PRs |
+| napari fork `gpu-exceptional-colors` (Stage 2) | prototype; superseded by U8a-c + U9; source of G1's probe and of the tiled-image fixes; the retile state loss is upstream as napari#9565 (approved) |
 | napari fork `gl-exceptional-probe` (Stage 4a) | stays a dev tool for G1 and volunteer driver rows |
 
 ### Decisions that belong to maintainers
