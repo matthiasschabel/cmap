@@ -33,6 +33,12 @@ policy belongs in this foundational library. Commit `1a998df` removes the `maske
 field and property while retaining the existing behavior in which masked entries use `bad`.
 
 #155 and the held napari forwarding branch were rebased onto that revised tip on 2026-08-25.
+
+After the maintainer accepted the feature on 2026-10-02 and asked for final-review cleanup,
+`upstream/main` (with the napari 0.9 test fix, #160) was merged into `feat/exceptional-colors`
+on 2026-10-08 (`002882b`) to turn CI green, the two answered review threads were resolved, and
+the stale #150/#160 references were dropped from the PR body. The thread asking whether the
+extended LUT should go public behind a deprecation is left open for the maintainer.
 #155 now preserves the six supported extreme fields at `313a7d9`; the forwarding branch remains
 a two-file, 28-line increment at `b62c52f`. Their plans and PR material are in
 `state_preservation_plan.md`, `state_preservation_pr_body.md`, and
