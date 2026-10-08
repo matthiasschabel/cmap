@@ -257,7 +257,7 @@ all upstream text.
 | U1 | vispy | fast-math-safe `is_nan` include (#2796) | open, plan approved | - |
 | U2 | vispy | `Image.bad_color` property (#2795) | open; maintainers favor its immutable-colormap approach | - |
 | U3 | vispy | `bool` return type in `shaders/parsing.py` | parked, independent; not needed | - |
-| U4 | vispy | CPU-path NaN via alpha class code; docstring states the contract (#2798) | implemented locally 2026-10-08, branch `fix/cpu-nan-bad-color` (`e41fdfea`), stacked on #2796; not pushed | U1, G2, G4-U4 |
+| U4 | vispy | CPU-path NaN via alpha class code; docstring states the contract (#2798) | draft PR vispy#2804 (`e41fdfea`), stacked on #2796; design issue vispy#2803 | U1, G2, G4-U4 |
 | U5 | cmap | IEEE exceptional colors (#151), then persistence (#155) | #151 CI rerunning on `002882b` | - |
 | U6 | napari | rely on vispy's `is_nan`; close the napari#9561 stopgap once napari's minimum vispy contains U1 | - | U1 release, G4-U4 |
 | U7 | napari + cmap | `neg_inf_color`/`pos_inf_color` in the model and `Colormap.map()`; cmap forwarding | fork branches ready, held | M4, U5 |
