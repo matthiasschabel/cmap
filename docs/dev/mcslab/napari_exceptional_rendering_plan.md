@@ -7,7 +7,8 @@
 **Review:** Codex plan-review pass 1 (gpt-5.6-sol, xhigh) 2026-08-12 on the staged plan;
 integrated revision 2026-10-08 reviewed by Codex (gpt-6.1-sol, high), verdict Revise;
 dispositions in "Review record - integrated revision" below. Then simplified the same day
-on owner decisions (contract items 2-3); the simplified version has not been re-reviewed
+on owner decisions (contract items 2-3) and re-reviewed in a convergence pass (Revise:
+B4-B7, N4, all accepted)
 
 This note began as the staged napari plan (Stages 0-5, 2026-08). The 2026-10-08 revision
 puts one layered plan on top: which layer owns each responsibility, how the open PRs and
@@ -103,8 +104,8 @@ What a user can rely on, at every layer:
 | Concrete per-class colors in the viewer model | napari `Colormap` | existing `nan_color`/`low_color`/`high_color`; proposed `neg_inf_color`/`pos_inf_color` (napari#9372) |
 | Data-boundary hygiene: finite float64 above FLT_MAX must not become inf at the float32 cast | napari layer/slice boundary | clip to +/-FLT_MAX before `fix_data_dtype()` |
 | NaN and infinity tests in GLSL | vispy | `misc/is-nan.glsl` (#2796), plus an infinity test in the same include |
-| Per-class colors, applied in normalized space | vispy `BaseColormap` (immutable) | `bad_color`, `low_color`, `high_color` today; `neg_inf_color`/`pos_inf_color` added beside them, in both `glsl_map` and `map()` |
-| Getting NaN and infinities to the colormap intact | vispy clim/gamma templates (GPU path); `CPUScaledTexture2D` (CPU path) | pass-through on the GPU; an alpha class code on the CPU |
+| Per-class colors, applied in normalized space | vispy `BaseColormap` (immutable) | `bad_color`, `low_color`, `high_color` today; `neg_inf_color`/`pos_inf_color` added beside them, in `glsl_map`, `map()` and `__getitem__` |
+| Getting NaN and infinities to the colormap intact | vispy clim/gamma templates (GPU path and, after U8c, meshes); `CPUScaledTexture2D` (CPU path) | per-sign pass-through when the color is set; a sign-based alpha class code on the CPU |
 
 napari ends up with **no shader code** for exceptional values: it supplies colors and clean
 data, and vispy renders them. The fork's template overrides and sentinel protocol (Stage 2)
@@ -113,30 +114,52 @@ are superseded and not proposed upstream.
 ### GPU-scaled path: pass-through to the colormap
 
 All per-class colors live in the colormap, next to `bad_color`/`low_color`/`high_color`,
-and are tested on the normalized value `t`, the same place every vispy consumer already
-applies its extreme colors:
+and are tested on the normalized value `t`, the same place vispy's consumers already
+apply their extreme colors:
 
-- `_APPLY_CLIM_FLOAT` passes infinities through as it already passes NaN, multiplied by the
-  sign of the clim span rather than divided by it. Dividing would turn them into NaN under
-  equal clims, which vispy rewrites to `(c, inf)` (`_scalable_textures.py:132`).
-- `_APPLY_GAMMA_FLOAT` passes infinities through too (`pow(-inf, g)` is NaN).
+- `_APPLY_CLIM_FLOAT` passes an infinity through, as it already passes NaN, **only when the
+  colormap sets that infinity's color**. The visual knows its colormap when it builds the
+  chain, so the pass-through line is generated per sign, not tested at run time. It
+  multiplies by the sign of the clim span rather than dividing by it, so equal clims, which
+  vispy rewrites to `(c, inf)` (`_scalable_textures.py:132`), keep the sign instead of
+  producing `inf/inf`.
+- `_APPLY_GAMMA_FLOAT` passes the same infinities through (`pow(-inf, g)` is NaN).
 - `glsl_map` gets a `t = +/-inf` check for each infinity color that is set, after the NaN
   check and before the low/high checks (which would otherwise swallow them; vispy prepends
   these snippets with `re.sub`, so the setter order in `__init__` fixes the order).
-- `map()` gets the same in `_map_edge_case_colors` (`np.isposinf`/`np.isneginf`), so the
-  CPU colormap API agrees with the shader.
+- An infinity whose color is unset takes exactly today's path: clamped to the clims, then
+  normalized. That keeps procedural colormaps such as `_Fire`, which do arithmetic on `t`
+  (`colormap.py:610`), and today's equal-clim result (+inf renders `bad_color`, from
+  `inf/inf`) unchanged. Contract item 4 therefore holds without exceptions.
+- ComplexImage builds its chain from the same templates (`image_complex.py:105`), so it
+  generates the same per-sign pass-through from its colormap. RGB/RGBA uses its own clim
+  template and is untouched.
 
-When no infinity color is set, nothing changes: +/-inf reach the existing low/high checks,
-or `clamp(t, 0, 1)` (defined for infinities, unlike NaN), and land where they land today.
-The mesh path already normalizes without clamping, so it gets infinity colors with no
-change of its own. ComplexImage reuses the same clim/gamma templates, so an infinity its
-scalar conversion produces also reaches the infinity colors when they are set, and renders
-as today when they are not. RGB/RGBA uses its own clim template and is untouched. A finite value below the clims gives a finite negative `t`, never an
-infinity, so the fork's sentinel leak into the mesh path cannot recur.
+The infinity test sits in `apply_clim` beside `is_nan`, the arrangement where the fork's NaN
+tests were folded away. G1 (done, see gates) found that every candidate form survives on the
+M5. The plan uses `x > FLT_MAX * gl_DepthRange.far` in the shared include: it matches
+`is_nan`, and a compiler allowed to assume no infinities could fold a bare literal bound.
 
-The infinity test needs the same care as the NaN test: it sits in `apply_clim` beside
-`is_nan`, which is the arrangement where the fork's NaN tests were folded away. Gate G1
-picks the form.
+### CPU colormap API
+
+- `map()` gets `np.isposinf`/`np.isneginf` checks in `_map_edge_case_colors` for each
+  infinity color that is set.
+- `__getitem__`, the documented entry point, clips to [0, 1] before calling `map()`
+  (`colormap.py:364`), which destroys +/-inf. It records the infinity masks before
+  clipping and applies the set infinity colors after mapping; finite clipping and unset
+  behavior are unchanged.
+
+### Mesh path
+
+The mesh path does not get infinity colors for free. Its normalization is an unguarded
+`(val - cmin) / (cmax - cmin)` (`mesh.py:283`): a finite value far outside tiny clims can
+overflow to an infinity and would then be painted with an infinity color, and equal clims
+(allowed, `mesh.py:194`) divide by zero. A separate PR (U8c) makes the mesh normalize as
+images do: reuse the image clim/gamma templates (the mesh source already says it could be
+de-duplicated with `image.py`), clamp finite values before dividing, and apply the same
+equal-clim rewrite. Clamping is a behavior change only for procedural colormaps that today
+extrapolate outside [0, 1] on meshes; the PR states it. Until U8c, infinity colors are an
+image and `map()` feature, and the mesh docs say so.
 
 ### CPU-scaled path: alpha class code
 
@@ -144,9 +167,14 @@ The luminance texture cannot hold NaN or inf, so `CPUScaledTexture2D` uploads
 `luminance_alpha` for single-band data (always, integer data included: an unsized texture's
 `internalformat` stays `None`, so a conditional switch would not trigger `_build_texture`).
 Alpha holds a **class code**, computed from the incoming data before
-`convert_dtype_and_clip`: finite, NaN, and later low-end and high-end infinity. The code is
-written by ramp end, not by sign. The CPU path re-normalizes whenever the clims change, so
-it knows the orientation, and its result matches the GPU path.
+`convert_dtype_and_clip`: finite, NaN, and later -inf and +inf.
+
+The codes are **by sign, not by ramp end.** A clim change inside the previous data limits
+does not re-upload (`_scalable_textures.py:249`; `ImageVisual.clim` then only updates the
+uniform, `image.py:420`), so a ramp-end code written at upload would go stale when the
+orientation flips. The shader decodes the sign against the current orientation instead,
+read from the normalized clim uniform it already has, so the CPU path matches the GPU path
+after any clim change without a re-upload.
 
 The fragment template on the CPU path selects by code ahead of `$color_transform`:
 
@@ -162,7 +190,7 @@ gl_FragColor = $select(texel);   // finite -> $color_transform(texel), else the 
   pass-through, so the `FunctionChain` and its positional `color_transform[1]`/`[2]` clim
   and gamma updates are untouched.
 - An infinity code whose color is unset falls through to `$color_transform`. The luminance
-  there is already clipped to 0 or 1, which reproduces today's rendering.
+  there is already clipped to the data range, which reproduces today's rendering.
 - The existing NaN pass-through guards stay (ComplexImage reuses them; equal clims can
   produce inf).
 
@@ -188,22 +216,32 @@ U8b extends it rather than redefining it.
 
 ### Verification gates
 
-- **G1, preflight, before U8a is written:** on the Apple M5, find an infinity test that
-  survives in a function that also calls `is_nan`, and confirm `is_nan` still survives
-  beside it. Start from the Stage 2 `napari_chain` probe with vispy's include substituted.
-  Candidates: the fork's uniform-bound form, or a bound scaled by `gl_DepthRange.far` as
-  `is_nan` uses. `gl_DepthRange.far` is clamped to [0, 1] by the spec, so a compiler could
-  in principle prove facts about it; nothing observed does.
+- **G1, preflight: done 2026-10-08 on the Apple M5.** The plan's GPU chain (vispy's
+  `is_nan` plus an infinity test in `apply_clim`, `apply_gamma` and the colormap) was
+  rendered with four infinity-test forms (literal FLT_MAX, uniform, FLT_MAX scaled by
+  `gl_DepthRange.far`, abs-literal), colors set and unset, increasing/inverted/equal clims,
+  gamma 1.0 and 2.2: all pass. The self-comparison NaN test fails in the same run, so the
+  harness can fail. Script and result: vispy handoff directory, `g1_probe.py` /
+  `g1_result.json`. It also exposed the equal-clim `inf/inf` case now handled by the
+  per-sign pass-through.
 - **G2, for U4:** exact-class rendering tests under `nearest` on the CPU path, including an
   image initialized with integer data and later given float data containing NaN; under
   `linear`, the `[[1]]` custom kernel and a signed software filter, only that pixels
   outside an exceptional value's footprint are unaffected.
 - **G3, for U10:** a finite float64 just above FLT_MAX renders differently from a true inf.
-- **G4, release-blocking for U4 and U8, and before napari retires any workaround:** an
-  Apple M5 readback through the implemented vispy visuals, under `nearest`, with distinct
-  NaN, infinity, low/high and ramp colors, under ordinary, inverted and equal clims, on
-  both texture paths and the mesh path. Plus regressions: imaginary-mode ComplexImage with
-  NaN only in the real part, and RGB/RGBA NaN unchanged.
+- **G4, release-blocking, per component; also before napari retires any workaround.**
+  Apple M5 readback through the implemented vispy visuals under `nearest`, with distinct
+  NaN, infinity, low/high and ramp colors:
+  - **G4-U4:** CPU-path NaN; ComplexImage imaginary mode with NaN only in the real part, and
+    RGB/RGBA NaN, unchanged.
+  - **G4-U8a:** GPU path and colormap API under increasing, inverted and equal clims, with
+    neither infinity color set, each set alone, and both set; a procedural colormap
+    (`fire`) with colors unset renders as today; `cm[[-inf, inf]]` and `cm.map(...)` return
+    the set colors.
+  - **G4-U8b:** CPU path, the same cases, plus an increasing-to-inverted clim change on the
+    same visual without replacing its data.
+  - **G4-U8c:** meshes, the same cases, plus a finite value far outside tiny clims (must not
+    take an infinity color) and equal clims.
 
 ### Upstream sequence
 
@@ -215,13 +253,14 @@ all upstream text.
 | U1 | vispy | fast-math-safe `is_nan` include (#2796) | open, plan approved | - |
 | U2 | vispy | `Image.bad_color` property (#2795) | open; maintainers favor its immutable-colormap approach | - |
 | U3 | vispy | `bool` return type in `shaders/parsing.py` | parked, independent; not needed | - |
-| U4 | vispy | CPU-path NaN via alpha class code; docstring states the contract (#2798) | issue open; owner position on M1 settled, so the PR can state the contract | U1, G2, G4 |
+| U4 | vispy | CPU-path NaN via alpha class code; docstring states the contract (#2798) | issue open; owner position on M1 settled, so the PR can state the contract | U1, G2, G4-U4 |
 | U5 | cmap | IEEE exceptional colors (#151), then persistence (#155) | #151 CI rerunning on `002882b` | - |
-| U6 | napari | rely on vispy's `is_nan`; close the napari#9561 stopgap once napari's minimum vispy contains U1 | - | U1 release, G4 |
+| U6 | napari | rely on vispy's `is_nan`; close the napari#9561 stopgap once napari's minimum vispy contains U1 | - | U1 release, G4-U4 |
 | U7 | napari + cmap | `neg_inf_color`/`pos_inf_color` in the model and `Colormap.map()`; cmap forwarding | fork branches ready, held | M4, U5 |
-| U8a | vispy | infinity test in the include; clim/gamma pass-through; `neg_inf_color`/`pos_inf_color` on `BaseColormap` (`glsl_map` + `map()`) | not started; issue first | U1, M3, G1, G4 |
-| U8b | vispy | CPU-path infinity codes | not started | U4, U8a |
-| U9 | napari | pass infinity colors to vispy | not started | U7, U8a release |
+| U8a | vispy | infinity test in the include; per-sign clim/gamma pass-through; `neg_inf_color`/`pos_inf_color` on `BaseColormap` (`glsl_map`, `map()`, `__getitem__`) | not started; issue first | U1, M3, G4-U8a |
+| U8b | vispy | CPU-path infinity codes (sign-based, decoded against the current orientation) | not started | U4, U8a, G4-U8b |
+| U8c | vispy | meshes normalize like images (shared templates, clamp before divide, equal-clim rewrite) | not started | U8a, G4-U8c |
+| U9 | napari | pass infinity colors to vispy | not started | U7; a vispy release containing U8a and U8b (napari falls back to the CPU path without float textures) |
 | U10 | napari | clip finite float64 overflow before the float32 cast | not started; separate small fix | G3 |
 
 U7 is useful without U8: napari's CPU path becomes correct, and the canvas keeps today's
@@ -236,7 +275,7 @@ How existing work maps onto this:
 | napari#9561 (stopgap NaN fix) | closed by U6 |
 | napari fork `colormap-inf-colors` (Stage 1) | U7 |
 | cmap `feat/napari-inf-color-forwarding` | U7 (cmap half) |
-| napari fork `gpu-exceptional-colors` (Stage 2) | prototype; superseded by U8 + U9; source of G1's probe and of the tiled-image fixes, which are separate napari defects worth their own PRs |
+| napari fork `gpu-exceptional-colors` (Stage 2) | prototype; superseded by U8a-c + U9; source of G1's probe and of the tiled-image fixes, which are separate napari defects worth their own PRs |
 | napari fork `gl-exceptional-probe` (Stage 4a) | stays a dev tool for G1 and volunteer driver rows |
 
 ### Decisions that belong to maintainers
@@ -245,7 +284,8 @@ How existing work maps onto this:
 |---|---|---|---|
 | M1 | Under software filters, is nearest-texel validity acceptable, or must the whole footprint be marked? | Owner position: behavior near exceptional values is unspecified under filtering (contract item 3), so no footprint marking. Asked on vispy#2798 2026-10-06, no reply yet | vispy |
 | M2 | *(retired 2026-10-08: the CPU path now carries infinity codes too)* | - | - |
-| M3 | Add `neg_inf_color`/`pos_inf_color` to `BaseColormap`, ramp-relative like `low_color`/`high_color`, honored in `glsl_map` and `map()` | Propose in the U8a issue | vispy |
+| M3 | Add `neg_inf_color`/`pos_inf_color` to `BaseColormap`, ramp-relative like `low_color`/`high_color`, honored in `glsl_map`, `map()` and `__getitem__`; meshes follow in U8c | Propose in the U8a issue | vispy |
+| M9 | Meshes adopt the image clim/gamma templates (clamp before divide), changing out-of-range extrapolation for procedural colormaps | Propose in U8c | vispy |
 | M4 | Infinity colors in napari's model (napari#9372) | Propose once a maintainer engages | napari |
 | M5 | *(retired 2026-10-08: volumes covered by contract item 3)* | - | - |
 | M6 | Masked data rendering (Stage 3) | Deferred by the owner | owner, then napari |
@@ -825,6 +865,22 @@ class codes); N2's open orientation question was settled as ramp-relative (contr
 
 None.
 
+### Convergence pass (Codex gpt-6.1-sol, high, 2026-10-08)
+
+B1-B3 and N1-N3 resolved. New findings, each verified against vispy before disposition:
+
+| ID | Finding | Disposition | Change |
+|---|---|---|---|
+| B4 | Ramp-end CPU codes go stale: a clim change inside the data limits does not re-upload (`_scalable_textures.py:249`, `image.py:420`) | Accepted | Codes are by sign and decoded against the current orientation; G4-U8b covers an in-place orientation flip |
+| B5 | Unconditional pass-through changes unset rendering: procedural `_Fire` does arithmetic on `t` (`colormap.py:610`); equal clims gave `bad_color` today | Accepted | Pass-through generated per sign only when that color is set; unset infinities take today's path exactly |
+| B6 | `__getitem__` clips to [0, 1] before `map()` (`colormap.py:364`), losing +/-inf | Accepted | Masks recorded before clipping, set colors applied after; G4-U8a tests indexing |
+| B7 | Mesh normalization is unguarded: finite overflow manufactures infinities; equal clims divide by zero (`mesh.py:283`, `:194`) | Accepted | Mesh is no longer "free": U8c adopts the image templates; M9 added; until then infinity colors are documented as image and `map()` only |
+| N4 | U9 needs U8b too; G4 ambiguous across components | Accepted | U9 depends on U8a and U8b; G4 split into G4-U4/U8a/U8b/U8c |
+
+### Open Disagreements
+
+None.
+
 ## Deferred Work
 
 - Masked data (Stage 3): owner-deferred. A mask is positional, so it needs a sidecar on the
@@ -843,9 +899,9 @@ None.
 
 ## Next Steps
 
-1. ~~`/collaborative-refinement` review~~: done 2026-10-08 on the first draft. The
-   simplified version would benefit from a convergence pass.
-2. Gate G1 on the Apple M5: pick the infinity test (no upstream dependency).
+1. ~~`/collaborative-refinement` review~~: done 2026-10-08; first pass and convergence pass
+   dispositions above. No open disagreements.
+2. ~~Gate G1 on the Apple M5~~: done 2026-10-08, all forms pass; `gl_DepthRange`-scaled form chosen.
 3. U4 can be implemented now, stacked on #2796, stating the contract in the PR; whether to
    wait for a reply on vispy#2798 first is the owner's call.
 4. Draft the U8a issue (M3) once U4 is up.
