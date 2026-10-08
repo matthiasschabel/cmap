@@ -166,8 +166,13 @@ image and `map()` feature, and the mesh docs say so.
 The luminance texture cannot hold NaN or inf, so `CPUScaledTexture2D` uploads
 `luminance_alpha` for single-band data (always, integer data included: an unsized texture's
 `internalformat` stays `None`, so a conditional switch would not trigger `_build_texture`).
-Alpha holds a **class code**, computed from the incoming data before
-`convert_dtype_and_clip`: finite, NaN, and later -inf and +inf.
+Alpha holds a **class code** (finite, NaN, and later -inf and +inf), computed in a
+`_scale_data_on_cpu` override after scaling. An image first given integer data converts
+later float data to that integer dtype and loses NaN; that is existing dtype pinning in
+`CPUScaledTextureMixin`, left out of U4. The shader reads the code with its own
+`texture2D($texture, texcoord).a` lookup, never from the filtered texel: software filters
+scale every channel by the kernel weights, so a `[[0]]` kernel would mark all finite data
+invalid (found in U4 review).
 
 The codes are **by sign, not by ramp end.** A clim change inside the previous data limits
 does not re-upload (`_scalable_textures.py:249`; `ImageVisual.clim` then only updates the
@@ -224,8 +229,7 @@ U8b extends it rather than redefining it.
   harness can fail. Script and result: vispy handoff directory, `g1_probe.py` /
   `g1_result.json`. It also exposed the equal-clim `inf/inf` case now handled by the
   per-sign pass-through.
-- **G2, for U4:** exact-class rendering tests under `nearest` on the CPU path, including an
-  image initialized with integer data and later given float data containing NaN; under
+- **G2, for U4:** exact-class rendering tests under `nearest` on the CPU path; under
   `linear`, the `[[1]]` custom kernel and a signed software filter, only that pixels
   outside an exceptional value's footprint are unaffected.
 - **G3, for U10:** a finite float64 just above FLT_MAX renders differently from a true inf.
@@ -253,7 +257,7 @@ all upstream text.
 | U1 | vispy | fast-math-safe `is_nan` include (#2796) | open, plan approved | - |
 | U2 | vispy | `Image.bad_color` property (#2795) | open; maintainers favor its immutable-colormap approach | - |
 | U3 | vispy | `bool` return type in `shaders/parsing.py` | parked, independent; not needed | - |
-| U4 | vispy | CPU-path NaN via alpha class code; docstring states the contract (#2798) | issue open; owner position on M1 settled, so the PR can state the contract | U1, G2, G4-U4 |
+| U4 | vispy | CPU-path NaN via alpha class code; docstring states the contract (#2798) | implemented locally 2026-10-08, branch `fix/cpu-nan-bad-color` (`e41fdfea`), stacked on #2796; not pushed | U1, G2, G4-U4 |
 | U5 | cmap | IEEE exceptional colors (#151), then persistence (#155) | #151 CI rerunning on `002882b` | - |
 | U6 | napari | rely on vispy's `is_nan`; close the napari#9561 stopgap once napari's minimum vispy contains U1 | - | U1 release, G4-U4 |
 | U7 | napari + cmap | `neg_inf_color`/`pos_inf_color` in the model and `Colormap.map()`; cmap forwarding | fork branches ready, held | M4, U5 |
