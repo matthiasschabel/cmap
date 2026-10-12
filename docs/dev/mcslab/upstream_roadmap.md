@@ -1,7 +1,7 @@
 # MCSLAB cmap upstream roadmap
 
 **Status:** Active
-**Last updated:** 2026-10-05
+**Last updated:** 2026-10-12
 **Scope:** small upstream cmap contributions that allow MCSLAB to reduce its colormap layer
 
 ## Where this stands
@@ -71,11 +71,12 @@ The napari side of #151 is now underway on the fork, per
   `high_color`/`low_color` for the infinities only and falling back to them when unset.
   Also pops the two fields in `_napari_cmap_to_vispy`, without which every colormap
   conversion raises `TypeError`.
-- **cmap forwarding** (`feat/napari-inf-color-forwarding`, stacked on
-  `feat/exceptional-colors`, merged into `integration`): five lines in `to_napari()` behind
-  the existing `_napari_colormap_param_names()` detection, so it stays inert on napari
-  versions without the fields. **Held**: no PR until napari accepts them, and it must be
-  rebased if #151 moves again. Rebased onto #151 at `1a998df` on 2026-08-25.
+- **cmap forwarding** (*dropped 2026-10-12*): `feat/napari-inf-color-forwarding` added five
+  lines to `to_napari()` passing `neg_inf_color`/`pos_inf_color` when napari's `Colormap`
+  accepts them. Nothing consumed it (MCS converts colormaps to napari itself), and it is inert
+  until napari accepts the fields (napari#9372), so the branch was deleted and reverted out of
+  `integration`. If napari accepts the fields, recreate it on `main` after #151 merges,
+  mirroring how `high_color`/`low_color` are passed.
 - **napari Stage 4a** (`dev/gl-exceptional-probe`): a GL capability probe in the fork's
   `docs/dev/exceptional_rendering/`. Its Apple M5 result found that vispy's own NaN test
   is folded away by Metal's fast math, so **NaN currently renders as the bottom of the
@@ -107,9 +108,9 @@ edits during merge. Their branches and worktrees are gone locally, and the two b
 deleted from the fork with the owner's authorization. `origin/main` was fast-forwarded to
 `f0a4aec` so future branches cut from the fork's default start from the right base.
 
-The two open PR branches, `feat/exceptional-colors` and `fix/state-preservation`, retain their
-worktrees and track fork branches. The held local `feat/napari-inf-color-forwarding` branch has a
-third worktree but no remote branch. `integration` contains the revised tips of all three plus this
+The open PR branches, `feat/exceptional-colors`, `fix/state-preservation` and
+`feat/public-lut-func`, retain their worktrees and track fork branches. `integration` merges
+all three plus this
 `docs/dev/mcslab/` tree and the `mkdocs.yml` exclusion; revised tips are merged rather than
 rewriting the integration manifest.
 
@@ -309,8 +310,8 @@ keeps application policy downstream.
    wait on review.
 3. Raise the MCS cmap floor and delete the corresponding fallbacks once the merged fixes
    ship in a release. They are in `main` but unreleased; the current floor is `cmap>=0.7`.
-4. Keep `feat/napari-inf-color-forwarding` local until napari accepts the corresponding fields;
-   rebase it again if #151 moves.
+4. If napari accepts `neg_inf_color`/`pos_inf_color` (napari#9372), recreate the cmap
+   forwarding on `main` (see the dropped item above) and offer it as a small follow-up PR.
 5. The napari 0.9 name-parity breakage is in draft PR #160 (branch
    `test/napari-09-name-parity`, test-only). napari 0.9 also dropped
    `_MATPLOTLIB_COLORMAP_NAMES`; the fix reads the public `matplotlib_colormaps` instead.

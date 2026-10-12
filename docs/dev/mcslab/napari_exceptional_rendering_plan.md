@@ -1,7 +1,7 @@
 # Exceptional-value rendering across cmap, vispy and napari: integrated plan
 
 **Status:** Active
-**Last updated:** 2026-10-08
+**Last updated:** 2026-10-12
 **Scope:** cmap -> napari -> vispy rendering stack; CPU- and GPU-scaled paths; NaN and
 +/-inf now, masked data and volumes deferred
 **Review:** Codex plan-review pass 1 (gpt-5.6-sol, xhigh) 2026-08-12 on the staged plan;
@@ -260,7 +260,7 @@ all upstream text.
 | U4 | vispy | CPU-path NaN via alpha class code; docstring states the contract (#2798) | draft PR vispy#2804 (`e41fdfea`), stacked on #2796; design issue vispy#2803 | U1, G2, G4-U4 |
 | U5 | cmap | IEEE exceptional colors (#151), then persistence (#155) | #151 CI rerunning on `002882b` | - |
 | U6 | napari | rely on vispy's `is_nan`; close the napari#9561 stopgap once napari's minimum vispy contains U1 | - | U1 release, G4-U4 |
-| U7 | napari + cmap | `neg_inf_color`/`pos_inf_color` in the model and `Colormap.map()`; cmap forwarding | fork branches ready, held | M4, U5 |
+| U7 | napari + cmap | `neg_inf_color`/`pos_inf_color` in the model and `Colormap.map()`; cmap forwarding | napari fork branch ready, held; cmap half dropped 2026-10-12, recreate once napari accepts the fields | M4, U5 |
 | U8a | vispy | infinity test in the include; per-sign clim/gamma pass-through; `neg_inf_color`/`pos_inf_color` on `BaseColormap` (`glsl_map`, `map()`, `__getitem__`) | not started; issue first | U1, M3, G4-U8a |
 | U8b | vispy | CPU-path infinity codes (sign-based, decoded against the current orientation) | not started | U4, U8a, G4-U8b |
 | U8c | vispy | meshes normalize like images (shared templates, clamp before divide, equal-clim rewrite) | not started | U8a, G4-U8c |
@@ -278,7 +278,7 @@ How existing work maps onto this:
 | vispy#2798 proposal v2 + astra amendments (vispy handoff dir) | U4, with the mask reframed as a class code and the snapped custom-kernel lookup dropped |
 | napari#9561 (stopgap NaN fix) | closed by U6 |
 | napari fork `colormap-inf-colors` (Stage 1) | U7 |
-| cmap `feat/napari-inf-color-forwarding` | U7 (cmap half) |
+| cmap `feat/napari-inf-color-forwarding` | U7 (cmap half); dropped 2026-10-12, recreate when napari accepts the fields |
 | napari fork `gpu-exceptional-colors` (Stage 2) | prototype; superseded by U8a-c + U9; source of G1's probe and of the tiled-image fixes; the retile state loss is upstream as napari#9565 (approved) |
 | napari fork `gl-exceptional-probe` (Stage 4a) | stays a dev tool for G1 and volunteer driver rows |
 
@@ -330,8 +330,9 @@ the semantic source of truth; nothing downstream should re-derive the fallback h
 
 Landed on the fork: `feature/colormap-inf-colors` (napari, commit 54cbfb8c) and
 `feat/napari-inf-color-forwarding` (cmap, stacked on `feat/exceptional-colors`), both
-merged into their repo's `integration`. Neither is pushed and neither has a PR; the cmap
-branch is held until napari accepts the fields.
+merged into their repo's `integration`. Neither is pushed and neither has a PR. The cmap
+branch was dropped and reverted out of `integration` on 2026-10-12; it is five inert lines to
+recreate once napari accepts the fields.
 
 Two things the plan did not anticipate, both caught by review and confirmed in code:
 `_napari_cmap_to_vispy()` passes the whole `model_dump()` to `VispyColormap`, so the new
